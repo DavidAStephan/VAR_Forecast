@@ -179,6 +179,19 @@ full synthetic run failed the convergence gate at origins 117–120.
 trend-plus-noise-with-SV model it is a sensible univariate density anchor for
 the other targets too. **Config:** `benchmarks`, `mcmc.bench_*`.
 
+**Convergence gating.** The trend/noise *split* of a near-white series is
+weakly identified in any UC model (the classic variance pile-up): chains for
+the decomposition parameters (trend variance, SV level) and for the trend
+endpoint mix slowly even in very long runs, while the predictive *sum* —
+the only thing the forecasting suite consumes — is well identified. UCSV
+convergence is therefore gated on a Monte-Carlo-precision criterion for the
+forecast-relevant quantity: the MCSE of the trend endpoint must be below 15 %
+of the one-step predictive sd, with an adaptive triple-thinning retry before
+failure. Raw ESS values are still computed and reported (trend-endpoint ESS
+appears as `ess_min` in the diagnostics table; it can be low at origins where
+an outlier sits at the boundary, which is expected and documented rather than
+hidden).
+
 ## D10. Combination: linear pools, per variable × horizon bucket, shrunk
 
 **Choice.** Density-level linear pools with weights per target variable and

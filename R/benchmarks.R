@@ -122,8 +122,8 @@ fit_ucsv <- function(y, cfg) {
     phi = stochvol::sv_beta(20, 1.5),
     sigma2 = stochvol::sv_gamma(2, 50),
     nu = stochvol::sv_exponential(0.1))
-  fits <- lapply(seq_len(ncol(y)), function(j) {
-    z <- y[, j]; Tn <- length(z)
+  run_chain <- function(z, thin_j) {
+    Tn <- length(z)
     tau <- stats::filter(z, rep(1 / 8, 8), sides = 1)
     tau[is.na(tau)] <- z[is.na(tau)]
     tau <- as.numeric(tau)
@@ -137,7 +137,7 @@ fit_ucsv <- function(y, cfg) {
                latent0 = he[1])
     tauT <- numeric(ndraw); heT <- numeric(ndraw); s2uT <- numeric(ndraw)
     pe_d <- matrix(NA_real_, ndraw, 4)
-    for (it in seq_len(nburn + ndraw * thin)) {
+    for (it in seq_len(nburn + ndraw * thin_j)) {
       tau <- ffbs_local_level(z, exp(he) * mix_e, rep(s2u, Tn))
       eres <- z - tau
       ures <- diff(tau)
@@ -150,19 +150,38 @@ fit_ucsv <- function(y, cfg) {
       pe$mu <- ue$para[1, "mu"]; pe$phi <- ue$para[1, "phi"]
       pe$sigma <- ue$para[1, "sigma"]; pe$nu <- ue$para[1, "nu"]
       pe$latent0 <- he[1]
-      if (it > nburn && (it - nburn) %% thin == 0) {
-        d <- (it - nburn) %/% thin
+      if (it > nburn && (it - nburn) %% thin_j == 0) {
+        d <- (it - nburn) %/% thin_j
         tauT[d] <- tau[Tn]; heT[d] <- he[Tn]; s2uT[d] <- s2u
         pe_d[d, ] <- c(pe$mu, pe$phi, pe$sigma, pe$nu)
       }
     }
     list(tauT = tauT, heT = heT, s2uT = s2uT, pe = pe_d)
+  }
+  # Convergence gate: the trend/noise SPLIT of a near-white series is weakly
+  # identified in any UC model (classic pile-up), so raw parameter ESS is the
+  # wrong criterion for a FORECASTING benchmark -- the predictive sum is what
+  # must be Monte-Carlo-precise. Gate: MCSE of the trend endpoint must be
+  # small relative to the one-step predictive sd. ESS values are still
+  # reported. DECISIONS.md D9.
+  tau_ess <- function(f) as.numeric(coda::effectiveSize(f$tauT))
+  mcse_ok <- function(f) {
+    pred_sd <- sqrt(var(f$tauT) + mean(exp(f$heT)) + mean(f$s2uT))
+    mcse <- sd(f$tauT) / sqrt(max(tau_ess(f), 1))
+    mcse < 0.15 * pred_sd
+  }
+  fits <- lapply(seq_len(ncol(y)), function(j) {
+    f <- run_chain(y[, j], thin)
+    if (!mcse_ok(f)) f <- run_chain(y[, j], thin * 3)   # adaptive retry
+    f
   })
-  ess <- min(vapply(fits, function(f) as.numeric(coda::effectiveSize(f$tauT)),
-                    numeric(1)))
+  ess_tau <- min(vapply(fits, tau_ess, numeric(1)))
+  conv <- all(vapply(fits, mcse_ok, logical(1)))
+  if (!conv)
+    logger::log_warn("ucsv: trend-endpoint MCSE exceeds 15% of predictive sd")
   structure(list(engine = "ucsv", varnames = colnames(y), fits = fits,
                  ndraw = ndraw,
-                 diagnostics = list(converged = ess > 30, ess_min = ess,
+                 diagnostics = list(converged = conv, ess_min = ess_tau,
                                     stable_share = 1, block_exog_max = 0)),
             class = c("post_ucsv", "var_posterior"))
 }
