@@ -1,0 +1,9 @@
+data/raw/
+cache/
+_targets/
+output/
+.Rproj.user/
+.Rhistory
+.RData
+renv/library/
+renv/staging/

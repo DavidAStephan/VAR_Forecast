@@ -1,0 +1,251 @@
+default:
+  master_seed: 20260612
+
+  data:
+    source: synthetic          # real | synthetic
+    start: "1990-03-01"        # first quarter (1990 Q1)
+    end: "2025-12-01"          # last quarter pulled (real); synthetic uses n_quarters
+    cache_max_age_days: 30
+    fred_api_key_env: FRED_API_KEY   # FRED used only if this env var is set
+
+  synthetic:
+    n_quarters: 144            # 36 years
+    covid_break: true
+    covid_t: 121               # index of the COVID-style outlier quarter
+    dgp_lags: 2
+
+  # ---------------------------------------------------------------------------
+  # transform_spec: the single source of truth.
+  # block: foreign | domestic (foreign listed first -> column ordering).
+  # transform: dlog (100*dlog), level, loglevel (100*log)
+  # delta: Minnesota own-lag prior mean (0 = mean-reverting growth, 1 = persistent level)
+  # ss_mean / ss_sd: steady-state prior (in transformed units, quarterly) for the
+  #   Villani engine. ss_sd large => weakly informative.
+  # sets: which model sizes include the variable.
+  # ---------------------------------------------------------------------------
+  variables:
+    f_act:
+      label: "World activity (US IP proxy)"
+      block: foreign
+      transform: dlog
+      delta: 0.0
+      ss_mean: 0.45
+      ss_sd: 0.25
+      sets: [small, medium]
+      source: {provider: dbnomics, id: "FED/G17/IP.B50001.S.Q"}
+      target: false
+    f_act_tw:
+      label: "World activity (trade-weighted, OECD+Asia proxy)"
+      block: foreign
+      transform: dlog
+      delta: 0.0
+      ss_mean: 0.70
+      ss_sd: 0.25
+      sets: [alt_foreign]
+      source: {provider: dbnomics, id: "OECD/QNA/G-20.B1_GE.GPSA.Q"}
+      target: false
+    f_comm:
+      label: "Commodity prices (RBA ICP, SDR)"
+      block: foreign
+      transform: dlog
+      delta: 0.0
+      ss_mean: 0.0
+      ss_sd: 1.0
+      sets: [small, medium, alt_foreign]
+      source: {provider: rba, id: "GRCPAISAD"}
+      target: false
+    f_rate:
+      label: "Foreign policy rate (US fed funds)"
+      block: foreign
+      transform: level
+      delta: 1.0
+      ss_mean: 2.5
+      ss_sd: 1.0
+      sets: [small, medium, alt_foreign]
+      source: {provider: dbnomics, id: "FED/H15/RIFSPFF_N.Q"}
+      target: false
+    gdp_growth:
+      label: "Real GDP growth (qtr %)"
+      block: domestic
+      transform: dlog
+      delta: 0.0
+      ss_mean: 0.70
+      ss_sd: 0.20
+      sets: [small, medium, alt_foreign]
+      source: {provider: abs, id: "A2304402X", catalogue: "5206.0"}
+      target: true
+      year_ended: true
+    cpi_inflation:
+      label: "Trimmed-mean CPI inflation (qtr %)"
+      block: domestic
+      transform: dlog
+      delta: 0.0
+      ss_mean: 0.625
+      ss_sd: 0.15
+      sets: [small, medium, alt_foreign]
+      source: {provider: rba, id: "GCPIOCPMTMQP"}
+      target: true
+      year_ended: true
+    unemp_rate:
+      label: "Unemployment rate (%)"
+      block: domestic
+      transform: level
+      delta: 1.0
+      ss_mean: 4.50
+      ss_sd: 0.75
+      sets: [small, medium, alt_foreign]
+      source: {provider: abs, id: "A84423050A", catalogue: "6202.0"}
+      target: true
+      year_ended: false
+    cash_rate:
+      label: "Cash rate (%)"
+      block: domestic
+      transform: level
+      delta: 1.0
+      ss_mean: 3.50
+      ss_sd: 1.00
+      sets: [small, medium, alt_foreign]
+      source: {provider: rba, id: "FIRMMCRTD"}
+      target: true
+      year_ended: false
+    rtwi:
+      label: "Real TWI (100*log)"
+      block: domestic
+      transform: loglevel
+      delta: 1.0
+      ss_mean: ~            # ~ = use sample mean (no strong economic anchor)
+      ss_sd: 10.0
+      sets: [small, medium, alt_foreign]
+      source: {provider: rba, id: "FRERTWI"}
+      target: false
+    tot:
+      label: "Terms of trade (100*log)"
+      block: domestic
+      transform: loglevel
+      delta: 1.0
+      ss_mean: ~
+      ss_sd: 10.0
+      sets: [medium]
+      source: {provider: abs, id: "A2303731T", catalogue: "5206.0"}
+      target: false
+    wpi_growth:
+      label: "Wage price index growth (qtr %)"
+      block: domestic
+      transform: dlog
+      delta: 0.0
+      ss_mean: 0.80
+      ss_sd: 0.20
+      sets: [medium]
+      source: {provider: abs, id: "A2603609J", catalogue: "6345.0"}
+      target: false
+    emp_growth:
+      label: "Employment growth (qtr %)"
+      block: domestic
+      transform: dlog
+      delta: 0.0
+      ss_mean: 0.45
+      ss_sd: 0.20
+      sets: [medium]
+      source: {provider: abs, id: "A84423043C", catalogue: "6202.0"}
+      target: false
+    cons_growth:
+      label: "Household consumption growth (qtr %)"
+      block: domestic
+      transform: dlog
+      delta: 0.0
+      ss_mean: 0.70
+      ss_sd: 0.20
+      sets: [medium]
+      source: {provider: abs, id: "A2304081W", catalogue: "5206.0"}
+      target: false
+    bond10y:
+      label: "10y AGS yield (%)"
+      block: domestic
+      transform: level
+      delta: 1.0
+      ss_mean: 4.00
+      ss_sd: 1.00
+      sets: [medium]
+      source: {provider: rba, id: "FCMYGBAG10D"}
+      target: false
+
+  horizons: 12
+
+  mcmc:
+    ndraw: 1500
+    nburn: 300
+    forecast_draws: 1000       # predictive draws per member per origin
+    store_draws: 300           # thinned draws persisted per origin for pooling
+    block_exog_prior_sd: 1.0e-5  # prior sd on domestic lags in foreign equations
+
+  # GLP-style data-driven overall tightness: marginal-likelihood grid search
+  # on the conjugate engine; selected lambda is reused by Gibbs members
+  # whose prior.lambda is "auto".
+  glp:
+    enabled: true
+    lambda_grid: [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.6]
+
+  # ---------------------------------------------------------------------------
+  # The suite. All VAR members are block-exogenous and iterated.
+  # engine: conj_br | gibbs | ss | sv  (see R/engines.R)
+  # ---------------------------------------------------------------------------
+  suite:
+    - name: small_minn
+      engine: gibbs
+      set: small
+      lags: 4
+      prior: {lambda: auto, soc: true, dio: true, soc_mu: 1.0, dio_delta: 1.0}
+    - name: small_ss
+      engine: ss
+      set: small
+      lags: 4
+      prior: {lambda: auto, soc: false, dio: false}
+    - name: small_sv
+      engine: sv
+      set: small
+      lags: 4
+      prior: {lambda: auto}
+    - name: small_loose_p5
+      engine: gibbs
+      set: small
+      lags: 5
+      prior: {lambda: 0.4, soc: false, dio: false}
+    - name: medium_minn
+      engine: sv
+      set: medium
+      lags: 2
+      prior: {lambda: auto}
+    - name: medium_conj
+      engine: conj_br
+      set: medium
+      lags: 4
+      prior: {lambda: 0.1, soc: true, dio: true, soc_mu: 1.0, dio_delta: 1.0}
+    - name: small_tight
+      engine: conj_br
+      set: small
+      lags: 4
+      prior: {lambda: 0.05, soc: true, dio: true, soc_mu: 1.0, dio_delta: 1.0}
+
+  benchmarks: [rw, ar4, ucsv, ucmean]
+
+  evaluation:
+    first_origin_frac: 0.65    # first forecast origin as fraction of sample
+    max_origins: 36            # cap on number of origins (compute budget)
+    window: expanding          # expanding | rolling
+    rolling_length: 80
+
+  combination:
+    schemes: [equal, logscore, pool, bma]
+    horizon_buckets:
+      near: [1, 2, 3, 4]
+      medium: [5, 6, 7, 8]
+      far: [9, 10, 11, 12]
+    shrink_kappa: 0.30         # weight on equal weights in the shrinkage
+    forgetting: 0.95           # discount on past log scores
+    min_train_origins: 8       # origins of scores needed before non-equal weights
+
+  parallel:
+    workers: 6
+
+  report:
+    fan_quantiles: [0.05, 0.15, 0.25, 0.35, 0.5, 0.65, 0.75, 0.85, 0.95]
