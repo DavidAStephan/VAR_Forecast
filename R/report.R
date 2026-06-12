@@ -72,11 +72,21 @@ forecast_tables <- function(ff, td, spec, cfg, out_dir = "output/forecasts") {
   tab
 }
 
-#' Evaluation tables: scores by horizon with DM significance markers.
-evaluation_tables <- function(allscores, dm, out_dir = "output/tables") {
+#' Evaluation tables: scores by horizon with DM significance markers. Also
+#' writes a variant excluding COVID realization quarters (mean log scores over
+#' windows containing 2020 are dominated by a few extreme realizations).
+evaluation_tables <- function(allscores, dm, cfg = NULL,
+                              out_dir = "output/tables") {
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
   sm <- summarise_scores(allscores)
   write.csv(sm, file.path(out_dir, "scores_by_horizon.csv"), row.names = FALSE)
+  if (!is.null(cfg$covid$quarters)) {
+    excl <- seq(as.Date(min(unlist(cfg$covid$quarters))), by = "quarter",
+                length.out = 6)   # the scaled quarters + the rebound tail
+    sm_ex <- summarise_scores(allscores, exclude_dates = excl)
+    write.csv(sm_ex, file.path(out_dir, "scores_by_horizon_excovid.csv"),
+              row.names = FALSE)
+  }
   if (!is.null(dm) && nrow(dm)) {
     dm$sig_crps <- cut(dm$p_crps, c(0, 0.01, 0.05, 0.1, 1),
                        labels = c("***", "**", "*", ""), include.lowest = TRUE)

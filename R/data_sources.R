@@ -202,9 +202,11 @@ download_real_data <- function(cfg, spec, raw_dir = "data/raw") {
   qs <- lapply(names(series), function(v) {
     q <- to_quarterly(series[[v]])
     # series published as a qtr % change (e.g. trimmed-mean CPI, G20 GDP
-    # growth) are cumulated to an index so the uniform dlog transform applies
+    # growth) are cumulated to an index so the uniform dlog transform applies;
+    # cumprod treats the published number as an arithmetic % change (exact),
+    # the subsequent dlog yields log growth consistent with the other series
     if (identical(spec$pre[spec$variable == v], "pct_change"))
-      q$value <- 100 * exp(cumsum(q$value / 100))
+      q$value <- 100 * cumprod(1 + q$value / 100)
     names(q)[2] <- v
     q
   })

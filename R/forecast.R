@@ -9,7 +9,8 @@
 # feeds subsequent dynamics). An approximation to proper conditional
 # forecasting (no Waggoner-Zha shock adjustment); see DECISIONS.md.
 
-simulate_paths <- function(post, y, h, ndraw, condition = NULL) {
+simulate_paths <- function(post, y, h, ndraw, condition = NULL,
+                           shock_scale = NULL) {
   UseMethod("simulate_paths")
 }
 
@@ -22,12 +23,14 @@ simulate_paths <- function(post, y, h, ndraw, condition = NULL) {
 
 #' Iterate one VAR path: B (K x M, intercept first), cS = chol(Sigma),
 #' ystate = matrix p x M with row 1 = most recent observation.
-.iterate_path <- function(B, cS, ystate, h, M, p, condition, varnames) {
+.iterate_path <- function(B, cS, ystate, h, M, p, condition, varnames,
+                          shock_scale = NULL) {
   out <- matrix(NA_real_, h, M)
+  ss_ <- if (is.null(shock_scale)) rep(1, h) else shock_scale
   for (s in seq_len(h)) {
     x <- c(1, as.vector(t(ystate[seq_len(p), , drop = FALSE])))
     mu_s <- drop(crossprod(B, x))
-    ynew <- mu_s + drop(crossprod(cS, rnorm(M)))
+    ynew <- mu_s + ss_[s] * drop(crossprod(cS, rnorm(M)))
     ynew <- .apply_condition(ynew, s, condition, varnames)
     out[s, ] <- ynew
     ystate <- rbind(ynew, ystate[-p, , drop = FALSE])
@@ -40,7 +43,8 @@ simulate_paths <- function(post, y, h, ndraw, condition = NULL) {
 
 # ---- gibbs ----------------------------------------------------------------------
 
-simulate_paths.post_gibbs <- function(post, y, h, ndraw, condition = NULL) {
+simulate_paths.post_gibbs <- function(post, y, h, ndraw, condition = NULL,
+                                      shock_scale = NULL) {
   M <- post$M; p <- post$p
   paths <- array(NA_real_, c(ndraw, h, M))
   st0 <- .ystate(y, p)
@@ -48,7 +52,8 @@ simulate_paths.post_gibbs <- function(post, y, h, ndraw, condition = NULL) {
     k <- ((d - 1) %% post$ndraw) + 1
     B <- post$B[k, , ]
     cS <- chol(post$Sigma[k, , ])
-    paths[d, , ] <- .iterate_path(B, cS, st0, h, M, p, condition, post$varnames)
+    paths[d, , ] <- .iterate_path(B, cS, st0, h, M, p, condition, post$varnames,
+                                  shock_scale = shock_scale)
   }
   dimnames(paths)[[3]] <- post$varnames
   paths
@@ -56,7 +61,8 @@ simulate_paths.post_gibbs <- function(post, y, h, ndraw, condition = NULL) {
 
 # ---- ss -------------------------------------------------------------------------
 
-simulate_paths.post_ss <- function(post, y, h, ndraw, condition = NULL) {
+simulate_paths.post_ss <- function(post, y, h, ndraw, condition = NULL,
+                                   shock_scale = NULL) {
   M <- post$M; p <- post$p
   paths <- array(NA_real_, c(ndraw, h, M))
   for (d in seq_len(ndraw)) {
@@ -66,13 +72,16 @@ simulate_paths.post_ss <- function(post, y, h, ndraw, condition = NULL) {
     z <- sweep(y, 2, Psi)
     st <- .ystate(z, p)
     B <- rbind(0, A)                      # zero intercept in demeaned form
-    zp <- .iterate_path(B, cS, st, h, M, p, condition = NULL, post$varnames)
-    pth <- sweep(zp, 2, Psi, "+")
-    if (!is.null(condition)) {
-      j <- match(condition$variable, post$varnames)
-      if (!is.na(j)) pth[, j] <- condition$path
+    # condition in DEMEANED units so the conditioned variable feeds the
+    # recursion each step (same contract as the other engines)
+    cond_z <- condition
+    if (!is.null(cond_z)) {
+      j <- match(cond_z$variable, post$varnames)
+      if (!is.na(j)) cond_z$path <- cond_z$path - Psi[j]
     }
-    paths[d, , ] <- pth
+    zp <- .iterate_path(B, cS, st, h, M, p, condition = cond_z, post$varnames,
+                        shock_scale = shock_scale)
+    paths[d, , ] <- sweep(zp, 2, Psi, "+")
   }
   dimnames(paths)[[3]] <- post$varnames
   paths
@@ -80,9 +89,11 @@ simulate_paths.post_ss <- function(post, y, h, ndraw, condition = NULL) {
 
 # ---- conj_br ---------------------------------------------------------------------
 
-simulate_paths.post_conj_br <- function(post, y, h, ndraw, condition = NULL) {
+simulate_paths.post_conj_br <- function(post, y, h, ndraw, condition = NULL,
+                                        shock_scale = NULL) {
   M <- post$M; p <- post$p; nf <- post$nf
   nd <- M - nf
+  ss_ <- if (is.null(shock_scale)) rep(1, h) else shock_scale
   paths <- array(NA_real_, c(ndraw, h, M))
   st0 <- .ystate(y, p)                       # all vars, most recent first
   for (d in seq_len(ndraw)) {
@@ -92,9 +103,9 @@ simulate_paths.post_conj_br <- function(post, y, h, ndraw, condition = NULL) {
     st <- st0
     for (s in seq_len(h)) {
       xf <- c(1, as.vector(t(st[seq_len(p), seq_len(nf), drop = FALSE])))
-      yf <- drop(crossprod(Bf, xf)) + drop(crossprod(cSf, rnorm(nf)))
+      yf <- drop(crossprod(Bf, xf)) + ss_[s] * drop(crossprod(cSf, rnorm(nf)))
       xd <- c(1, as.vector(t(st[seq_len(p), , drop = FALSE])), yf)
-      yd <- drop(crossprod(Bd, xd)) + drop(crossprod(cSd, rnorm(nd)))
+      yd <- drop(crossprod(Bd, xd)) + ss_[s] * drop(crossprod(cSd, rnorm(nd)))
       ynew <- c(yf, yd)
       ynew <- .apply_condition(ynew, s, condition, post$varnames)
       paths[d, s, ] <- ynew
@@ -107,7 +118,9 @@ simulate_paths.post_conj_br <- function(post, y, h, ndraw, condition = NULL) {
 
 # ---- sv --------------------------------------------------------------------------
 
-simulate_paths.post_sv <- function(post, y, h, ndraw, condition = NULL) {
+simulate_paths.post_sv <- function(post, y, h, ndraw, condition = NULL,
+                                   shock_scale = NULL) {
+  # shock_scale ignored: the SV engine handles COVID via t-errors + SV
   M <- post$M; p <- post$p
   paths <- array(NA_real_, c(ndraw, h, M))
   st0 <- .ystate(y, p)
@@ -129,7 +142,9 @@ simulate_paths.post_sv <- function(post, y, h, ndraw, condition = NULL) {
         xx <- c(1, xlag, if (length(eq$contemp)) ynew[eq$contemp])
         hs[i] <- svp[[i]]["mu"] + svp[[i]]["phi"] * (hs[i] - svp[[i]]["mu"]) +
                  svp[[i]]["sigma"] * rnorm(1)
-        ynew[i] <- sum(xx * betas[[i]]) + exp(hs[i] / 2) * rnorm(1)
+        nu_i <- svp[[i]]["nu"]
+        eps <- if (!is.na(nu_i) && is.finite(nu_i)) rt(1, df = nu_i) else rnorm(1)
+        ynew[i] <- sum(xx * betas[[i]]) + exp(hs[i] / 2) * eps
       }
       ynew <- .apply_condition(ynew, s, condition, post$varnames)
       paths[d, s, ] <- ynew

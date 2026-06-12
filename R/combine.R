@@ -8,11 +8,17 @@
 # from the mixture; its PIT is the weighted member PIT (exact mixture CDF).
 
 #' Training scores available at origin t for variable v and horizons hs.
+#' Restricted to (origin, h) cells where EVERY member has a score, so that
+#' sums of log densities are comparable across members (a member with fewer
+#' negative terms would otherwise get spuriously large weight).
 .train_scores <- function(scores, v, hs, t, members) {
   s <- scores[scores$variable == v & scores$measure == "q" &
               scores$h %in% hs & (scores$origin + scores$h) <= t &
               scores$member %in% members, ]
-  s
+  if (!nrow(s)) return(s)
+  cell <- paste(s$origin, s$h)
+  complete <- names(which(table(cell) == length(members)))
+  s[cell %in% complete, ]
 }
 
 #' Discounted sum of log predictive densities per member.
@@ -66,7 +72,8 @@ combo_weights <- function(scheme, scores, v, hs, t, members, cfg) {
   if (scheme == "logscore") {
     ld <- .disc_logdens(tr, t, cfg$combination$forgetting)
     ld <- ld[members]; ld[is.na(ld)] <- -Inf
-    # normalise per-member by obs count to a common scale, then softmax
+    # softmax of discounted log-score sums (comparable across members because
+    # .train_scores keeps only complete cells)
     w <- exp(ld - max(ld, na.rm = TRUE))
     w[!is.finite(w)] <- 0
     if (sum(w) <= 0) return(eq)

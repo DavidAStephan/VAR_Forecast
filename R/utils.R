@@ -24,8 +24,8 @@ config_hash <- function(cfg, r_dir = "R") {
   code <- vapply(est_files,
                  function(f) digest::digest(file = f, algo = "xxhash64"), "")
   digest::digest(list(cfg[c("master_seed", "data", "synthetic", "variables",
-                            "horizons", "mcmc", "glp", "suite", "benchmarks",
-                            "evaluation")], code), algo = "xxhash64")
+                            "horizons", "mcmc", "glp", "covid", "suite",
+                            "benchmarks", "evaluation")], code), algo = "xxhash64")
 }
 
 #' Set up the logger once per session.
@@ -150,16 +150,25 @@ build_XY <- function(y, p, intercept = TRUE) {
 }
 
 #' Per-variable residual sd from a univariate AR(plag) fit -- the sigma_i used
-#' to scale the Minnesota prior.
-ar_sigmas <- function(y, plag = 4) {
-  apply(y, 2, function(z) {
-    z <- z[is.finite(z)]
+#' to scale the Minnesota prior. Optional row weights (LP COVID weighting):
+#' the Minnesota scale calibration is not outlier-robust (Hartwig 2024), so
+#' the same GLS weighting applied in estimation must be applied here.
+ar_sigmas <- function(y, plag = 4, weights = NULL) {
+  vapply(seq_len(ncol(y)), function(j) {
+    z <- y[, j]
     p <- min(plag, floor(length(z) / 4))
-    fit <- tryCatch(stats::ar(z, order.max = p, aic = FALSE, method = "ols"),
-                    error = function(e) NULL)
-    if (is.null(fit) || !is.finite(fit$var.pred) || fit$var.pred <= 0)
-      stats::sd(z) else sqrt(fit$var.pred)
-  })
+    xy <- build_XY(matrix(z, ncol = 1), p)
+    X <- xy$X; Y <- drop(xy$Y)
+    if (!is.null(weights)) {
+      w <- weights[(p + 1):length(z)]
+      X <- X * w; Y <- Y * w
+    }
+    b <- tryCatch(qr.coef(qr(X), Y), error = function(e) NULL)
+    if (is.null(b) || anyNA(b)) return(stats::sd(Y))
+    r <- Y - drop(X %*% b)
+    s <- sqrt(sum(r^2) / max(length(Y) - ncol(X), 1))
+    if (!is.finite(s) || s <= 0) stats::sd(Y) else s
+  }, numeric(1))
 }
 
 #' Quarterly date sequence helper.

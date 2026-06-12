@@ -34,23 +34,42 @@ forecast_at_origin <- function(member, td_t, spec, cfg) {
     set_name <- member$set
     spec_m <- vars_for_set(spec, set_name)
     y <- as.matrix(td_t[, spec_m$variable])
-    if (member$kind == "var" && identical(member$prior$lambda, "auto") &&
-        isTRUE(cfg$glp$enabled)) {
-      glp_lambda <- select_lambda(y, member$lags, ar_sigmas(y), spec_m$delta,
-                                  grid = unlist(cfg$glp$lambda_grid))
+    # COVID treatment (LP scaling / dummy): scales estimated from THIS
+    # member's data up to the origin only -- no look-ahead. The SV engine
+    # ignores the weights (t-errors instead).
+    cov <- covid_treatment(y, td_t$date, member$lags, ar_sigmas(y),
+                           spec_m$delta, cfg, H)
+    if (!is.null(cov$weights) && member$engine != "sv") {
+      sig_w <- ar_sigmas(y, weights = cov$weights)
+      cov2 <- covid_treatment(y, td_t$date, member$lags, sig_w,
+                              spec_m$delta, cfg, H)
+      if (!is.null(cov2$weights)) cov <- cov2
+    }
+    use_w <- if (member$engine == "sv") NULL else cov$weights
+    s_fut <- if (member$engine == "sv") NULL else cov$s_future
+    if (identical(member$prior$lambda, "auto") && isTRUE(cfg$glp$enabled)) {
+      glp_lambda <- select_lambda(y, member$lags,
+                                  ar_sigmas(y, weights = use_w), spec_m$delta,
+                                  grid = unlist(cfg$glp$lambda_grid),
+                                  weights = use_w)
     } else glp_lambda <- 0.2
-    post <- fit_var_member(y, member, spec_m, cfg, glp_lambda = glp_lambda)
-    paths <- simulate_paths(post, y, H, nfd)
+    post <- fit_var_member(y, member, spec_m, cfg, glp_lambda = glp_lambda,
+                           weights = use_w)
+    paths <- simulate_paths(post, y, H, nfd, shock_scale = s_fut)
     keep <- intersect(tgt, dimnames(paths)[[3]])
     paths <- paths[, , keep, drop = FALSE]
+    covid_info <- list(scales = cov$scales, rho = cov$rho)
   } else {
     cfgb <- cfg
     cfgb$mcmc$ndraw <- cfg$mcmc$bench_ndraw
     cfgb$mcmc$nburn <- cfg$mcmc$bench_nburn
     y <- as.matrix(td_t[, tgt])
-    post <- fit_benchmark(y, member$engine, cfgb)
-    paths <- simulate_paths(post, y, H, nfd)
+    cov <- covid_treatment(y, td_t$date, 4, ar_sigmas(y),
+                           spec$delta[match(tgt, spec$variable)], cfg, H)
+    post <- fit_benchmark(y, member$engine, cfgb, weights = cov$weights)
+    paths <- simulate_paths(post, y, H, nfd, shock_scale = cov$s_future)
     glp_lambda <- NA_real_
+    covid_info <- list(scales = cov$scales, rho = cov$rho)
   }
   vnames <- dimnames(paths)[[3]]
   sanity <- check_forecasts(paths, as.matrix(td_t[, vnames]),
@@ -59,7 +78,21 @@ forecast_at_origin <- function(member, td_t, spec, cfg) {
   thin <- round(seq(1, dim(paths)[1], length.out = cfg$mcmc$store_draws))
   list(draws = paths[thin, , , drop = FALSE],
        diagnostics = post$diagnostics, sanity = sanity,
-       glp_lambda = glp_lambda)
+       glp_lambda = glp_lambda, covid = covid_info)
+}
+
+#' The single harness entry point that slices the panel at an origin: this is
+#' the ONLY place the estimation window is cut, so the no-look-ahead test can
+#' exercise the same code path the evaluation uses. Honors the configured
+#' window type (expanding or rolling).
+harness_forecast <- function(member, td, t, spec, cfg) {
+  first <- if (identical(cfg$evaluation$window, "rolling")) {
+    max(1L, t - cfg$evaluation$rolling_length + 1L)
+  } else 1L
+  set.seed(derive_seed(cfg$master_seed, paste0(member$name, "-", t)))
+  out <- forecast_at_origin(member, td[first:t, , drop = FALSE], spec, cfg)
+  out$origin <- t
+  out
 }
 
 #' Run the recursive loop for one member over all origins, with disk caching
@@ -73,9 +106,7 @@ run_oos_member <- function(member, td, spec, cfg, cache_root = "cache") {
     ensure_project_loaded()
     f <- file.path(cdir, sprintf("%s_o%03d.rds", member$name, t))
     if (file.exists(f)) return(readRDS(f))
-    set.seed(derive_seed(cfg$master_seed, paste0(member$name, "-", t)))
-    out <- forecast_at_origin(member, td[seq_len(t), , drop = FALSE], spec, cfg)
-    out$origin <- t
+    out <- harness_forecast(member, td, t, spec, cfg)
     saveRDS(out, f)
     out
   }, .options = furrr::furrr_options(seed = TRUE))
@@ -152,14 +183,26 @@ collect_draws <- function(oos_all, cfg) {
 }
 
 #' Summary score table: mean logdens / CRPS / RMSE by member, variable,
-#' measure, horizon.
-summarise_scores <- function(scores) {
-  agg <- aggregate(cbind(logdens, crps) ~ member + variable + measure + h,
-                   data = scores, FUN = mean)
-  rmse <- aggregate((point - real)^2 ~ member + variable + measure + h,
-                    data = scores, FUN = function(x) sqrt(mean(x)))
+#' measure, horizon. Aggregated separately so an NA in one score (e.g. a
+#' combo row without stored draws for CRPS) does not drop the row from the
+#' others. exclude_dates: optional realization dates to exclude (e.g. COVID
+#' quarters, whose extreme realizations dominate mean log scores).
+summarise_scores <- function(scores, exclude_dates = NULL) {
+  if (!is.null(exclude_dates))
+    scores <- scores[!(as.Date(scores$date) %in% as.Date(exclude_dates)), ]
+  agg_one <- function(v) {
+    out <- aggregate(scores[[v]],
+                     by = scores[, c("member", "variable", "measure", "h")],
+                     FUN = function(x) mean(x, na.rm = TRUE))
+    names(out)[5] <- v
+    out
+  }
+  ld <- agg_one("logdens"); cr <- agg_one("crps")
+  rmse <- aggregate((scores$point - scores$real)^2,
+                    by = scores[, c("member", "variable", "measure", "h")],
+                    FUN = function(x) sqrt(mean(x, na.rm = TRUE)))
   names(rmse)[5] <- "rmse"
-  merge(agg, rmse)
+  Reduce(merge, list(ld, cr, rmse))
 }
 
 # ---- Diebold-Mariano ---------------------------------------------------------------
@@ -205,8 +248,11 @@ dm_vs_reference <- function(scores, reference) {
       common <- intersect(base$origin, alt$origin)
       if (length(common) < 8) next
       b <- base[match(common, base$origin), ]; a <- alt[match(common, alt$origin), ]
-      d_se   <- dm_test((a$point - a$real)^2, (b$point - b$real)^2, h = cb$h)
-      d_crps <- dm_test(a$crps, b$crps, h = cb$h)
+      # year-ended losses come from overlapping 4-quarter sums: serial
+      # correlation extends to order h+3, not h-1
+      h_nw <- if (cb$measure == "ye") cb$h + 3 else cb$h
+      d_se   <- dm_test((a$point - a$real)^2, (b$point - b$real)^2, h = h_nw)
+      d_crps <- dm_test(a$crps, b$crps, h = h_nw)
       rows[[length(rows) + 1]] <- data.frame(
         member = m, reference = reference, variable = cb$variable,
         measure = cb$measure, h = cb$h,
@@ -220,7 +266,9 @@ dm_vs_reference <- function(scores, reference) {
 # ---- section 9 self-checks ----------------------------------------------------------
 
 #' No-look-ahead test: corrupting all data AFTER the origin must not change
-#' the forecast (the harness only ever passes td[1:t, ]).
+#' the forecast. The corrupted FULL panel goes through harness_forecast --
+#' the same entry point the evaluation uses -- so the test exercises the
+#' actual slice point rather than pre-sliced data (which could never fail).
 test_no_lookahead <- function(td, spec, cfg, member = NULL) {
   if (is.null(member)) member <- all_members(cfg)[[1]]
   origins <- oos_origins(td, cfg)
@@ -228,10 +276,8 @@ test_no_lookahead <- function(td, spec, cfg, member = NULL) {
   td_bad <- td
   if (t < nrow(td))
     td_bad[(t + 1):nrow(td), -1] <- td_bad[(t + 1):nrow(td), -1] * 1e6 + 999
-  set.seed(derive_seed(cfg$master_seed, "nla"))
-  f1 <- forecast_at_origin(member, td[seq_len(t), , drop = FALSE], spec, cfg)
-  set.seed(derive_seed(cfg$master_seed, "nla"))
-  f2 <- forecast_at_origin(member, td_bad[seq_len(t), , drop = FALSE], spec, cfg)
+  f1 <- harness_forecast(member, td, t, spec, cfg)
+  f2 <- harness_forecast(member, td_bad, t, spec, cfg)
   ok <- identical(f1$draws, f2$draws)
   if (!ok) logger::log_error("NO-LOOK-AHEAD TEST FAILED")
   else logger::log_info("no-look-ahead test passed (member {member$name}, origin {t})")
@@ -252,7 +298,7 @@ test_reproducibility <- function(td, spec, cfg) {
   ok
 }
 
-#' Calibration check: PIT approximately uniform (chi-square on deciles).
+#' Calibration check: PIT approximately uniform (chi-square on quintile bins).
 check_calibration <- function(scores, alpha = 0.01) {
   out <- list()
   for (m in unique(scores$member)) {

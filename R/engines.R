@@ -87,18 +87,20 @@ mcmc_diagnostics <- function(own_lag_draws, stable_share) {
 
 # ---- engine: conj_br (block-recursive conjugate NIW) --------------------------
 
-fit_conj_br <- function(y, member, spec_m, cfg, prior) {
+fit_conj_br <- function(y, member, spec_m, cfg, prior, weights = NULL) {
   M <- ncol(y); p <- member$lags
   blocks <- spec_m$block
   nf <- sum(blocks == "foreign"); nd <- M - nf
-  sigma <- ar_sigmas(y); delta <- spec_m$delta
+  sigma <- ar_sigmas(y, weights = weights); delta <- spec_m$delta
   n <- cfg$mcmc$forecast_draws
+  w_rows <- if (is.null(weights)) NULL else weights[(p + 1):nrow(y)]
 
   yf <- y[, seq_len(nf), drop = FALSE]
   ybar <- colMeans(y[seq_len(p), , drop = FALSE])
 
   # foreign marginal VAR (conjugate, own dummies)
   xyf <- build_XY(yf, p)
+  if (!is.null(w_rows)) { xyf$Y <- xyf$Y * w_rows; xyf$X <- xyf$X * w_rows }
   prf <- conjugate_prior(nf, p, sigma[seq_len(nf)], delta[seq_len(nf)],
                          lambda = prior$lambda)
   if (prior$soc || prior$dio) {
@@ -113,6 +115,7 @@ fit_conj_br <- function(y, member, spec_m, cfg, prior) {
   xy <- build_XY(y, p)
   Yd <- xy$Y[, (nf + 1):M, drop = FALSE]
   Xd <- cbind(xy$X, y[(p + 1):nrow(y), seq_len(nf), drop = FALSE])
+  if (!is.null(w_rows)) { Yd <- Yd * w_rows; Xd <- Xd * w_rows }
   Kd <- ncol(Xd)
   sig_d <- sigma[(nf + 1):M]
   B0d <- matrix(0, Kd, nd)
@@ -130,12 +133,19 @@ fit_conj_br <- function(y, member, spec_m, cfg, prior) {
                            soc_mu = prior$soc_mu, dio = prior$dio,
                            dio_delta = prior$dio_delta)
     if (!is.null(dmy$Y)) {
-      # keep only rows for domestic variables; extend X with contemp.-foreign cols
+      # keep only rows for domestic variables; extend X with contemp.-foreign
+      # cols. SOC rows are zero off the own variable, so their foreign
+      # contemporaneous entries are 0; the DIO row asserts ALL variables at
+      # ybar, so its contemporaneous-foreign entries must be ybar_f/dio_delta.
       keepr <- which(rowSums(abs(dmy$Y[, (nf + 1):M, drop = FALSE])) > 0 |
                      rowSums(abs(dmy$Y)) == 0)
       dYd <- dmy$Y[keepr, (nf + 1):M, drop = FALSE]
-      dXd <- cbind(dmy$X[keepr, , drop = FALSE],
-                   matrix(0, length(keepr), nf))
+      dXc <- matrix(0, length(keepr), nf)
+      is_dio <- abs(dmy$X[keepr, 1]) > 0          # DIO is the row with intercept
+      if (any(is_dio) && prior$dio)
+        dXc[is_dio, ] <- matrix(ybar[seq_len(nf)] / prior$dio_delta,
+                                sum(is_dio), nf, byrow = TRUE)
+      dXd <- cbind(dmy$X[keepr, , drop = FALSE], dXc)
       Yd <- rbind(dYd, Yd); Xd <- rbind(dXd, Xd)
     }
   }
@@ -144,7 +154,7 @@ fit_conj_br <- function(y, member, spec_m, cfg, prior) {
   # diagnostics: stability of the implied joint system at posterior mean
   Bf_bar <- postf$B1
   stable <- mean(vapply(seq_len(min(n, 200)), function(d)
-    max_eig_mod(postf$B[d, , ], nf, p) < 1.05, logical(1)))
+    max_eig_mod(matrix(postf$B[d, , ], ncol = nf), nf, p) < 1.05, logical(1)))
   own <- sapply(seq_len(nf), function(i) postf$B[, 1 + i, i])
   diag_ <- mcmc_diagnostics(own, stable)
   diag_$ess_min <- diag_$ess_median <- n     # iid draws from closed form
@@ -160,13 +170,17 @@ fit_conj_br <- function(y, member, spec_m, cfg, prior) {
 
 # ---- engine: gibbs (independent Normal + inverse-Wishart) ---------------------
 
-fit_gibbs <- function(y, member, spec_m, cfg, prior) {
+fit_gibbs <- function(y, member, spec_m, cfg, prior, weights = NULL) {
   M <- ncol(y); p <- member$lags
   blocks <- spec_m$block
-  sigma <- ar_sigmas(y); delta <- spec_m$delta
+  sigma <- ar_sigmas(y, weights = weights); delta <- spec_m$delta
   ndraw <- cfg$mcmc$ndraw; nburn <- cfg$mcmc$nburn
 
   xy <- build_XY(y, p)
+  if (!is.null(weights)) {
+    w_rows <- weights[(p + 1):nrow(y)]
+    xy$Y <- xy$Y * w_rows; xy$X <- xy$X * w_rows
+  }
   ybar <- colMeans(y[seq_len(p), , drop = FALSE])
   if (prior$soc || prior$dio) {
     dmy <- soc_dio_dummies(M, p, ybar, delta, soc = prior$soc,
@@ -213,11 +227,12 @@ fit_gibbs <- function(y, member, spec_m, cfg, prior) {
 
 # ---- engine: ss (Villani steady-state) ----------------------------------------
 
-fit_ss <- function(y, member, spec_m, cfg, prior) {
+fit_ss <- function(y, member, spec_m, cfg, prior, weights = NULL) {
   M <- ncol(y); p <- member$lags
   blocks <- spec_m$block
-  sigma <- ar_sigmas(y); delta <- spec_m$delta
+  sigma <- ar_sigmas(y, weights = weights); delta <- spec_m$delta
   ndraw <- cfg$mcmc$ndraw; nburn <- cfg$mcmc$nburn
+  w_rows <- if (is.null(weights)) rep(1, nrow(y) - p) else weights[(p + 1):nrow(y)]
 
   ssp <- steadystate_prior(spec_m, y)
   psi0 <- ssp$psi0; psi_prec <- 1 / ssp$psi_sd^2
@@ -243,10 +258,12 @@ fit_ss <- function(y, member, spec_m, cfg, prior) {
   lag_idx <- function(z) build_XY(z, p, intercept = FALSE)
 
   for (it in seq_len(nburn + ndraw)) {
-    # 1. A | Psi, Sigma on demeaned data (reject explosive draws, max 5 tries)
+    # 1. A | Psi, Sigma on demeaned data (reject explosive draws, max 5 tries);
+    # rows GLS-weighted for the COVID treatment
     z <- sweep(y, 2, Psi)
     xz <- lag_idx(z)
-    XtX <- crossprod(xz$X); XtY <- crossprod(xz$X, xz$Y)
+    Xw <- xz$X * w_rows; Yw <- xz$Y * w_rows
+    XtX <- crossprod(Xw); XtY <- crossprod(Xw, Yw)
     Sigma_inv <- chol2inv(chol(Sigma))
     for (try in 1:5) {
       Anew <- draw_beta_given_sigma(XtX, XtY, Sigma_inv, V0inv, b0vec,
@@ -255,22 +272,21 @@ fit_ss <- function(y, member, spec_m, cfg, prior) {
       if (max_eig_mod(Bfull, M, p) < 1.0) { A <- Anew; break }
       if (try == 5) A <- Anew   # keep anyway; flagged via stability share
     }
-    # 2. Psi | A, Sigma
+    # 2. Psi | A, Sigma: w_t-row = U Psi + e_t with var s_t^2 Sigma, so each
+    # t contributes w_t^2 to the GLS precision and w_t^2 * row to the rhs
     U <- diag(M); for (l in seq_len(p)) U <- U - t(A[((l - 1) * M + 1):(l * M), ])
-    W <- xz$Y * 0
     xy_raw <- build_XY(y, p, intercept = FALSE)
     W <- xy_raw$Y - xy_raw$X %*% A
-    Tn <- nrow(W)
     UtSi <- t(U) %*% Sigma_inv
-    Pp <- diag(psi_prec, M) + Tn * UtSi %*% U
-    rhs <- psi_prec * psi0 + UtSi %*% colSums(W)
+    Pp <- diag(psi_prec, M) + sum(w_rows^2) * UtSi %*% U
+    rhs <- psi_prec * psi0 + UtSi %*% colSums(W * w_rows^2)
     cPp <- chol((Pp + t(Pp)) / 2)
     Psi <- drop(backsolve(cPp, forwardsolve(t(cPp), rhs)) +
                 backsolve(cPp, rnorm(M)))
-    # 3. Sigma | A, Psi
+    # 3. Sigma | A, Psi (weighted residuals are homoskedastic)
     z <- sweep(y, 2, Psi)
     xz <- lag_idx(z)
-    E <- xz$Y - xz$X %*% A
+    E <- (xz$Y - xz$X %*% A) * w_rows
     Sigma <- riwish(nu0 + nrow(E), S0 + crossprod(E))
     if (it > nburn) {
       Ad[it - nburn, , ] <- A; Pd[it - nburn, ] <- Psi; Sd[it - nburn, , ] <- Sigma
@@ -329,17 +345,23 @@ sv_equation_prior <- function(i, eq, sigma, delta, lambda) {
   list(b0 = b0, s0 = s0)
 }
 
-fit_sv <- function(y, member, spec_m, cfg, prior) {
+fit_sv <- function(y, member, spec_m, cfg, prior, weights = NULL) {
   M <- ncol(y); p <- member$lags
   blocks <- spec_m$block
   sigma <- ar_sigmas(y); delta <- spec_m$delta
   ndraw <- cfg$mcmc$ndraw; nburn <- cfg$mcmc$nburn
+  # COVID robustness for the SV engine: t-distributed errors (CCMM 2024 SV-t,
+  # ~ their preferred SVO-t; Hartwig 2024), NOT the LP row weighting -- the
+  # outlier is absorbed by the iid scale mixture instead of the persistent
+  # log-volatility process. `weights` is accepted and ignored by design.
+  use_t <- !isFALSE(cfg$covid$sv_t_errors)
 
   eqs <- vector("list", M)
   pspec <- stochvol::specify_priors(
     mu = stochvol::sv_normal(0, 10),
     phi = stochvol::sv_beta(20, 1.5),
-    sigma2 = stochvol::sv_gamma(0.5, 0.5))
+    sigma2 = stochvol::sv_gamma(0.5, 0.5),
+    nu = if (use_t) stochvol::sv_exponential(0.1) else stochvol::sv_infinity())
 
   for (i in seq_len(M)) {
     eq <- sv_equation_design(y, i, p, blocks)
@@ -352,34 +374,42 @@ fit_sv <- function(y, member, spec_m, cfg, prior) {
     beta <- pr$b0
     resid <- eq$y - drop(eq$X %*% beta)
     h <- rep(log(stats::var(resid) + 1e-8), Tn)
-    para <- list(mu = h[1], phi = 0.9, sigma = 0.2, nu = Inf, rho = 0,
+    mix <- rep(1, Tn)                       # t-scale mixing weights
+    para <- list(mu = h[1], phi = 0.9, sigma = 0.2,
+                 nu = if (use_t) 10 else Inf, rho = 0,
                  beta = 0, latent0 = h[1])
 
     bdr <- matrix(NA_real_, ndraw, Kx)
     hT  <- numeric(ndraw)
-    pdr <- matrix(NA_real_, ndraw, 3, dimnames = list(NULL, c("mu", "phi", "sigma")))
+    pdr <- matrix(NA_real_, ndraw, 4,
+                  dimnames = list(NULL, c("mu", "phi", "sigma", "nu")))
     for (it in seq_len(nburn + ndraw)) {
-      # beta | h: weighted regression
-      w <- exp(-h / 2)
+      # beta | h, mix: weighted regression (conditional variance exp(h)*mix)
+      w <- exp(-h / 2) / sqrt(mix)
       Xw <- eq$X * w; yw <- eq$y * w
       P <- crossprod(Xw); diag(P) <- diag(P) + V0inv
       cP <- chol(P)
       m_ <- backsolve(cP, forwardsolve(t(cP), crossprod(Xw, yw) + V0inv * pr$b0))
       beta <- drop(m_ + backsolve(cP, rnorm(Kx)))
       resid <- eq$y - drop(eq$X %*% beta)
-      # h, para | resid via stochvol single update
+      # h, para, mix | resid via stochvol single update
       upd <- stochvol::svsample_fast_cpp(
         resid, draws = 1, burnin = 0, designmatrix = matrix(NA),
         priorspec = pspec, thinpara = 1, thinlatent = 1,
-        keeptime = "all", startpara = para, startlatent = h)
+        keeptime = "all", startpara = para, startlatent = h,
+        keeptau = use_t)
       h <- drop(upd$latent[1, ])
+      if (use_t) mix <- drop(upd$tau[1, ])
       para$mu    <- upd$para[1, "mu"]
       para$phi   <- upd$para[1, "phi"]
       para$sigma <- upd$para[1, "sigma"]
+      if (use_t) para$nu <- upd$para[1, "nu"]
       para$latent0 <- h[1]
       if (it > nburn) {
         d <- it - nburn
-        bdr[d, ] <- beta; hT[d] <- h[Tn]; pdr[d, ] <- c(para$mu, para$phi, para$sigma)
+        bdr[d, ] <- beta; hT[d] <- h[Tn]
+        pdr[d, ] <- c(para$mu, para$phi, para$sigma,
+                      if (is.finite(para$nu)) para$nu else Inf)
       }
     }
     eqs[[i]] <- list(design = eq, beta = bdr, hT = hT, svpara = pdr,
@@ -403,7 +433,8 @@ fit_sv <- function(y, member, spec_m, cfg, prior) {
 
 # ---- dispatcher ----------------------------------------------------------------
 
-fit_var_member <- function(y, member, spec_m, cfg, glp_lambda = 0.2) {
+fit_var_member <- function(y, member, spec_m, cfg, glp_lambda = 0.2,
+                           weights = NULL) {
   prior <- resolve_prior(member, glp_lambda)
   fitter <- switch(member$engine,
                    conj_br = fit_conj_br,
@@ -411,5 +442,5 @@ fit_var_member <- function(y, member, spec_m, cfg, glp_lambda = 0.2) {
                    ss      = fit_ss,
                    sv      = fit_sv,
                    stop("unknown engine: ", member$engine))
-  fitter(y, member, spec_m, cfg, prior)
+  fitter(y, member, spec_m, cfg, prior, weights = weights)
 }

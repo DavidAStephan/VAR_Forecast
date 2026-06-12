@@ -78,7 +78,7 @@ list(
     timed("final forecasts", final_forecasts(td, spec, cfg, scores))
   }),
   tar_target(fc_table, forecast_tables(final_fc, td, spec, cfg)),
-  tar_target(eval_tables, evaluation_tables(allscores, dm_table)),
+  tar_target(eval_tables, evaluation_tables(allscores, dm_table, cfg)),
   tar_target(weight_table, {
     dir.create("output/tables", recursive = TRUE, showWarnings = FALSE)
     write.csv(final_fc$weights, "output/tables/final_weights.csv", row.names = FALSE)

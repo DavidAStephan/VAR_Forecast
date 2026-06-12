@@ -81,6 +81,29 @@ scored with the log score and CRPS (`scoringRules`), points with RMSE, and
 calibration with PIT histograms, all by horizon, for quarterly and year-ended
 transforms.
 
+## 4½. The COVID quarters
+
+Three quarters of 2020 are 5–30σ events. Following Lenza & Primiceri (2022),
+the constant-volatility members scale up the residual covariance in the
+configured COVID quarters — a free scale factor per quarter, estimated by
+marginal likelihood *recursively at each forecast origin*, with the excess
+volatility decaying geometrically afterwards — implemented as GLS row
+weighting, with the decaying scale path carried into the predictive shocks at
+COVID-era origins. The SV members instead use t-distributed errors (the
+Carriero–Clark–Marcellino–Mertens SV-t specification), so the spike is
+absorbed by the transitory scale mixture rather than the persistent
+volatility process. The Minnesota σ-calibration and the data-driven tightness
+selection run on the same weighted data (Hartwig 2024). COVID observations
+remain in the forecast jump-off — only their likelihood contribution is
+down-weighted. A `dummy` option (≈ dropping the quarters, Schorfheide–Song
+2024) is available for comparison; its known cost is unrealistically tight
+predictive bands at pandemic-era origins. See DECISIONS.md D17.
+
+Because a handful of extreme realizations dominate mean log scores, the
+tables below are complemented by
+`output/tables/scores_by_horizon_excovid.csv`, which excludes the COVID
+realization quarters from scoring.
+
 ## 5. Results
 
 ### 5.1 Density accuracy by horizon

@@ -128,9 +128,16 @@ log_marginal_likelihood <- function(Y, X, prior) {
 }
 
 #' GLP-style data-driven overall tightness: grid-search the conjugate marginal
-#' likelihood on the given data set. Returns the selected lambda.
-select_lambda <- function(y, p, sigma, delta, grid, lag_decay = 1) {
+#' likelihood on the given data set. Returns the selected lambda. Optional row
+#' weights apply the LP COVID rescaling (the s_t Jacobian is constant in
+#' lambda, so it drops out of the comparison).
+select_lambda <- function(y, p, sigma, delta, grid, lag_decay = 1,
+                          weights = NULL) {
   xy <- build_XY(y, p)
+  if (!is.null(weights)) {
+    w <- weights[(p + 1):nrow(y)]
+    xy$Y <- xy$Y * w; xy$X <- xy$X * w
+  }
   M <- ncol(y)
   mls <- vapply(grid, function(lam) {
     pr <- conjugate_prior(M, p, sigma, delta, lambda = lam, lag_decay = lag_decay)

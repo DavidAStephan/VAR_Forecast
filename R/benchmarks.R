@@ -6,19 +6,25 @@
 # VAR must clear.
 
 #' Random walk on the modelled (transformed) series with Gaussian increments.
-fit_rw <- function(y, cfg) {
+#' Optional weights downweight COVID-quarter increments in the sd estimate.
+fit_rw <- function(y, cfg, weights = NULL) {
+  w <- if (is.null(weights)) rep(1, nrow(y) - 1) else pmin(weights[-1], weights[-nrow(y)])
+  sdd <- apply(diff(y) * w, 2, sd)
   structure(list(engine = "rw", varnames = colnames(y),
-                 yT = y[nrow(y), ], sdd = apply(diff(y), 2, sd),
+                 yT = y[nrow(y), ], sdd = sdd,
                  diagnostics = list(converged = TRUE, ess_min = Inf,
                                     stable_share = 1, block_exog_max = 0)),
             class = c("post_rw", "var_posterior"))
 }
 
-simulate_paths.post_rw <- function(post, y, h, ndraw, condition = NULL) {
+simulate_paths.post_rw <- function(post, y, h, ndraw, condition = NULL,
+                                   shock_scale = NULL) {
   nv <- length(post$yT)
+  ss_ <- if (is.null(shock_scale)) rep(1, h) else shock_scale
   paths <- array(NA_real_, c(ndraw, h, nv), dimnames = list(NULL, NULL, post$varnames))
   for (j in seq_len(nv)) {
-    inc <- matrix(rnorm(ndraw * h, 0, post$sdd[j]), ndraw, h)
+    inc <- matrix(rnorm(ndraw * h, 0, post$sdd[j]), ndraw, h) *
+           matrix(ss_, ndraw, h, byrow = TRUE)
     paths[, , j] <- post$yT[j] + t(apply(inc, 1, cumsum))
   }
   paths
@@ -28,11 +34,15 @@ simulate_paths.post_rw <- function(post, y, h, ndraw, condition = NULL) {
 #' Minnesota-style lag shrinkage (sd = 0.5/lag); iterated density forecasts.
 #' A flat ridge lets near-unit oscillatory coefficient draws resonate off
 #' COVID-sized outliers in the initial conditions.
-fit_ar <- function(y, cfg, p = 4) {
+fit_ar <- function(y, cfg, p = 4, weights = NULL) {
   fits <- lapply(seq_len(ncol(y)), function(j) {
     z <- y[, j]
     xy <- build_XY(matrix(z, ncol = 1), p)
     X <- xy$X; Y <- drop(xy$Y)
+    if (!is.null(weights)) {
+      w <- weights[(p + 1):length(z)]
+      X <- X * w; Y <- Y * w
+    }
     K <- ncol(X)
     V0inv <- diag(c(1e-4, (seq_len(p) / 0.5)^2))  # loose intercept, sd 0.5/l on lag l
     P <- crossprod(X) + V0inv
@@ -48,8 +58,10 @@ fit_ar <- function(y, cfg, p = 4) {
             class = c("post_ar", "var_posterior"))
 }
 
-simulate_paths.post_ar <- function(post, y, h, ndraw, condition = NULL) {
+simulate_paths.post_ar <- function(post, y, h, ndraw, condition = NULL,
+                                   shock_scale = NULL) {
   nv <- length(post$fits); p <- post$p
+  ss_ <- if (is.null(shock_scale)) rep(1, h) else shock_scale
   paths <- array(NA_real_, c(ndraw, h, nv), dimnames = list(NULL, NULL, post$varnames))
   for (j in seq_len(nv)) {
     f <- post$fits[[j]]
@@ -57,18 +69,22 @@ simulate_paths.post_ar <- function(post, y, h, ndraw, condition = NULL) {
     for (d in seq_len(ndraw)) {
       sig2 <- f$s2 * f$df / rchisq(1, f$df)
       # stationarity-truncated posterior: an explosive AR draw compounds over
-      # 12 iterated steps (seen at origins straddling the COVID outlier)
+      # 12 iterated steps (seen at origins straddling the COVID outlier).
+      # Stationarity requires ALL roots of 1 - b1 z - ... - bp z^p OUTSIDE the
+      # unit circle, i.e. min |root| > 1 (max companion eigenvalue < 1).
       for (try in 1:20) {
         beta <- f$bhat + sqrt(sig2) * backsolve(f$cP, rnorm(p + 1))
-        rt_ <- max(Mod(polyroot(c(1, -beta[-1]))))
-        if (1 / rt_ < 1.0) break
+        rmin <- min(Mod(polyroot(c(1, -beta[-1]))))
+        if (rmin > 1.0) break
         if (try == 20) {
-          beta[-1] <- beta[-1] * 0.95 / (1 / rt_)
+          # deflate lag-l coefficient by (0.95*rmin)^l: scales the max
+          # companion eigenvalue 1/rmin down to ~0.95/1
+          beta[-1] <- beta[-1] * (0.95 * rmin)^seq_len(p)
         }
       }
       st <- z[length(z) - seq_len(p) + 1]      # most recent first
       for (s in seq_len(h)) {
-        ynew <- sum(c(1, st) * beta) + sqrt(sig2) * rnorm(1)
+        ynew <- sum(c(1, st) * beta) + ss_[s] * sqrt(sig2) * rnorm(1)
         paths[d, s, j] <- ynew
         st <- c(ynew, st[-p])
       }
@@ -186,7 +202,9 @@ fit_ucsv <- function(y, cfg) {
             class = c("post_ucsv", "var_posterior"))
 }
 
-simulate_paths.post_ucsv <- function(post, y, h, ndraw, condition = NULL) {
+simulate_paths.post_ucsv <- function(post, y, h, ndraw, condition = NULL,
+                                     shock_scale = NULL) {
+  # shock_scale ignored: UCSV is already outlier-robust (t errors)
   nv <- length(post$fits)
   paths <- array(NA_real_, c(ndraw, h, nv), dimnames = list(NULL, NULL, post$varnames))
   for (j in seq_len(nv)) {
@@ -207,30 +225,37 @@ simulate_paths.post_ucsv <- function(post, y, h, ndraw, condition = NULL) {
   paths
 }
 
-#' Unconditional mean with Gaussian predictive (expanding moments).
-fit_ucmean <- function(y, cfg) {
+#' Unconditional mean with Gaussian predictive (expanding moments,
+#' COVID-weighted when weights supplied).
+fit_ucmean <- function(y, cfg, weights = NULL) {
+  w <- if (is.null(weights)) rep(1, nrow(y)) else weights^2
+  mu <- colSums(y * w) / sum(w)
+  sdv <- sqrt(colSums(sweep(y, 2, mu)^2 * w) / sum(w))
   structure(list(engine = "ucmean", varnames = colnames(y),
-                 mu = colMeans(y), sd = apply(y, 2, sd),
+                 mu = mu, sd = sdv,
                  diagnostics = list(converged = TRUE, ess_min = Inf,
                                     stable_share = 1, block_exog_max = 0)),
             class = c("post_ucmean", "var_posterior"))
 }
 
-simulate_paths.post_ucmean <- function(post, y, h, ndraw, condition = NULL) {
+simulate_paths.post_ucmean <- function(post, y, h, ndraw, condition = NULL,
+                                       shock_scale = NULL) {
+  ss_ <- if (is.null(shock_scale)) rep(1, h) else shock_scale
   nv <- length(post$mu)
   paths <- array(rnorm(ndraw * h * nv), c(ndraw, h, nv),
                  dimnames = list(NULL, NULL, post$varnames))
-  for (j in seq_len(nv)) paths[, , j] <- post$mu[j] + paths[, , j] * post$sd[j]
+  scl <- matrix(ss_, ndraw, h, byrow = TRUE)
+  for (j in seq_len(nv)) paths[, , j] <- post$mu[j] + paths[, , j] * post$sd[j] * scl
   paths
 }
 
 #' Dispatcher mirroring fit_var_member.
-fit_benchmark <- function(y_targets, name, cfg) {
+fit_benchmark <- function(y_targets, name, cfg, weights = NULL) {
   switch(name,
-         rw     = fit_rw(y_targets, cfg),
-         ar4    = fit_ar(y_targets, cfg, p = 4),
-         ucsv   = fit_ucsv(y_targets, cfg),
-         ucmean = fit_ucmean(y_targets, cfg),
+         rw     = fit_rw(y_targets, cfg, weights = weights),
+         ar4    = fit_ar(y_targets, cfg, p = 4, weights = weights),
+         ucsv   = fit_ucsv(y_targets, cfg),     # already outlier-robust (t)
+         ucmean = fit_ucmean(y_targets, cfg, weights = weights),
          stop("unknown benchmark: ", name))
 }
 

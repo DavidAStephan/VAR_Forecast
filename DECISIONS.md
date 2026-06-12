@@ -303,3 +303,65 @@ FRED INDPRO and recovers the missing quarters. The long-history RBA commodity
 index is `GRCPAISDR` (from 1982); the bulk-spot variant `GRCPAISAD` only
 starts in 2009 and silently truncated the panel — found and fixed in the
 first real-data run.
+
+## D17. COVID-period estimation (added 2026-06-13 after the code/literature audit)
+
+**Problem.** Three quarters of 2020 data (GDP −7 %, unemployment +3 pp, the
+2020Q3 rebound) are 5–30 standard-deviation events. Untreated, they (i) wreck
+constant-volatility BVAR coefficient estimates — Lenza & Primiceri (2022 JAE)
+measure a 965-log-point marginal-likelihood gap and show the GLP tightness
+posterior shifting from λ≈0.13 to λ≈0.5; (ii) contaminate the Minnesota scale
+calibration itself, since σ-scalings from AR residual RMSDs are not
+outlier-robust (Hartwig 2024 SNDE); and (iii) in plain persistent-SV models,
+get misread as a *persistent* volatility shift that inflates predictive bands
+for years (CCMM 2024 REStat; Hartwig).
+
+**Choice (three coordinated mechanisms, config `covid:`):**
+1. **Constant-volatility engines (`gibbs`, `ss`, `conj_br`) + AR/RW/mean
+   benchmarks: Lenza–Primiceri volatility scaling.** y_t = c + B(L)y_{t−1} +
+   s_t ε_t with a free scale per configured COVID quarter (default 2020Q1–Q3)
+   and geometric decay of the excess sd afterwards. Implemented exactly as LP:
+   rows of (Y, X) divided by s_t (GLS), which preserves every engine's
+   machinery including the Kronecker conjugate; (s, ρ) estimated at *every
+   forecast origin* by maximizing the closed-form conjugate marginal
+   likelihood including the Jacobian −M·Σlog s_t, coordinate-descent on grids
+   — the GLP hyperparameter treatment, fully recursive (no look-ahead).
+   Predictive shocks at COVID-era origins carry the decaying s-path
+   (LP's density-forecast payoff: dropping data "vastly underestimates
+   uncertainty"). The Minnesota σ-calibration and the GLP λ-selection use the
+   same weighted data (closing Hartwig's contamination channel).
+2. **SV engine: t-distributed errors** (stochvol `nu ~ Exp(0.1)`, scale
+   mixture in the WLS step, t-draws in prediction) instead of row weighting —
+   the CCMM SV-t specification, which in their comparison performs within
+   0–2 % of their preferred SVO-t and avoids misattributing the spike to the
+   persistent volatility component. Config `covid.sv_t_errors`.
+3. **`treatment: dummy` option**: scales → 10³ at the COVID quarters,
+   equivalent to dummying-out/dropping those likelihood rows (Schorfheide–Song
+   2024; Cascaldi-Garcia's Pandemic Priors at φ→0), with future shocks at
+   s = 1. Provided as the comparison/robustness option; its documented cost is
+   predictive bands stuck at pre-COVID widths (CCMM).
+
+**What is deliberately NOT removed.** COVID observations remain in the
+forecast jump-off (lagged regressors / conditioning information) — the
+literature is explicit that only the likelihood contribution should be
+treated (CCMM's AR(1) jump-off discussion; Schorfheide–Song filter through
+the pandemic for the origin state).
+
+**Evaluation interaction.** Mean log scores over windows containing 2020
+realizations are dominated by a few quarters; the evaluation now also writes
+score tables excluding the COVID realization dates, and CRPS (less
+outlier-sensitive) is reported alongside log scores throughout.
+
+**Rejected.** Full CCMM SVO (outlier mixture states) — SV-t achieves nearly
+the same per their own results at a fraction of the implementation; Ng's
+(2021) epidemiological covariates — wrong data dependencies for an
+always-runnable pipeline; sample truncation at 2019Q4 (RBA RDP practice) —
+forfeits 5 years of data and the post-COVID inflation episode, the most
+informative period in the evaluation window.
+
+**Validation.** Unit tests: ML detects the synthetic outlier (scales ≥ 8);
+LP-weighted coefficient posteriors are materially closer to clean-sample
+posteriors than untreated ones on synthetic ground truth; the dummy limit is
+insensitive to the exact tiny weight; no-look-ahead holds with the treatment
+active. **Config:** `covid.*`.
+
