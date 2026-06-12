@@ -17,10 +17,12 @@ load_config <- function(path = "config/config.yml") {
 #' used to key the OOS cache (a config-only key would serve stale results
 #' after code changes).
 config_hash <- function(cfg, r_dir = "R") {
-  code <- if (dir.exists(r_dir)) {
-    vapply(sort(list.files(r_dir, pattern = "\\.R$", full.names = TRUE)),
-           function(f) digest::digest(file = f, algo = "xxhash64"), "")
-  } else character(0)
+  est_files <- file.path(r_dir, paste0(
+    c("utils", "data_sources", "transforms", "priors", "engines",
+      "forecast", "benchmarks", "evaluate"), ".R"))
+  est_files <- est_files[file.exists(est_files)]
+  code <- vapply(est_files,
+                 function(f) digest::digest(file = f, algo = "xxhash64"), "")
   digest::digest(list(cfg[c("master_seed", "data", "synthetic", "variables",
                             "horizons", "mcmc", "glp", "suite", "benchmarks",
                             "evaluation")], code), algo = "xxhash64")
@@ -53,7 +55,11 @@ timed <- function(label, expr) {
 
 #' Build the transform_spec table (single source of truth) from config.
 #' Rows are ordered foreign block first, then domestic, preserving config order.
+#' Only variables belonging to a set used by the configured suite are kept --
+#' an unused variable with a short/stale source series would otherwise
+#' truncate the balanced panel for everyone.
 build_transform_spec <- function(cfg) {
+  active_sets <- unique(vapply(cfg$suite, `[[`, "", "set"))
   rows <- lapply(names(cfg$variables), function(v) {
     x <- cfg$variables[[v]]
     data.frame(
@@ -74,6 +80,9 @@ build_transform_spec <- function(cfg) {
     )
   })
   spec <- do.call(rbind, rows)
+  keep <- vapply(strsplit(spec$sets, ","),
+                 function(s) any(s %in% active_sets), logical(1))
+  spec <- spec[keep, , drop = FALSE]
   spec <- spec[order(match(spec$block, c("foreign", "domestic"))), ]
   rownames(spec) <- NULL
   stopifnot(all(spec$block %in% c("foreign", "domestic")),

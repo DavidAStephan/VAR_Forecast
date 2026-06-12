@@ -125,7 +125,6 @@ plot_pits <- function(allscores, h = 1, out_dir = "output/figures") {
   d <- allscores[allscores$measure == "q" & allscores$h == h, ]
   g <- ggplot(d, aes(pit)) +
     geom_histogram(breaks = seq(0, 1, 0.1), fill = "steelblue", color = "white") +
-    geom_hline(yintercept = NA) +
     facet_wrap(~member, scales = "free_y") +
     labs(title = sprintf("PIT histograms, h = %d (uniform = calibrated)", h),
          x = "PIT", y = NULL) + .theme()

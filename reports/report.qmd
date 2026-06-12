@@ -22,8 +22,12 @@ diag    <- rd("diagnostics.csv")
 wfinal  <- rd("final_weights.csv")
 dm      <- tryCatch(rd("dm_tests.csv"), error = function(e) NULL)
 fc      <- read.csv("../output/forecasts/forecast_table.csv")
-is_synth <- "synthetic" %in% spec$provider == FALSE  # placeholder; overwritten below
 src <- yaml::read_yaml("../config/config.yml")$default$data$source
+src_note <- if (identical(src, "synthetic")) {
+  "All results below are produced from the synthetic block-exogenous DGP, which exists so that the pipeline runs end-to-end offline; the *relative* model rankings are informative about the machinery, not about Australia. Re-run with `data.source: real` for substantive results."
+} else {
+  "Results are based on final-vintage published data; real-time vintages are not used, so revisions-sensitive comparisons (especially for GDP) should be read with care."
+}
 ```
 
 ## 1. What this is
@@ -38,7 +42,7 @@ block (Cushman & Zha 1997; Zha 1999), at lags and contemporaneously. This is
 imposed in estimation (not just on impulse responses) and verified numerically
 (§6).
 
-**Data source for this run:** `r src`. `r if (identical(src, "synthetic")) "All results below are produced from the synthetic block-exogenous DGP, which exists so that the pipeline runs end-to-end offline; the *relative* model rankings are informative about the machinery, not about Australia. Re-run with `data.source: real` for substantive results." else "Results are based on final-vintage published data; real-time vintages are not used, so revisions-sensitive comparisons (especially for GDP) should be read with care."`
+**Data source for this run:** `r src`. `r src_note`
 
 ## 2. Data and transformations
 
@@ -128,12 +132,11 @@ Final-origin combination weights (optimal pool, shrunk toward equal), by
 variable and horizon bucket:
 
 ```{r}
-wp <- wfinal[wfinal$scheme == "pool", ]
-wp <- reshape(wp[, c("variable","bucket","member","weight")],
-              idvar = c("member"), timevar = "bucket",
-              direction = "wide", ids = "member")
-kable(aggregate(weight ~ member + bucket, data = wfinal[wfinal$scheme=="pool",],
-                FUN = mean), digits = 3,
+wp <- aggregate(weight ~ member + bucket, data = wfinal[wfinal$scheme == "pool", ],
+                FUN = mean)
+wp <- reshape(wp, idvar = "member", timevar = "bucket", direction = "wide")
+names(wp) <- sub("^weight\\.", "", names(wp))
+kable(wp[order(-wp$near), ], digits = 3, row.names = FALSE,
       caption = "Optimal-pool weights averaged over target variables")
 ```
 
