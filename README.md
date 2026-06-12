@@ -41,6 +41,12 @@ US series; without it the pipeline still runs (DBnomics first) and any
 irrecoverable download failure stops with a clear message suggesting the
 synthetic path.
 
+Two practical notes: the key-free US activity series (IMF IFS via DBnomics)
+lags by about a year and the balanced panel is trimmed to the stalest series,
+so a key-free real run ends roughly a year behind; setting `FRED_API_KEY`
+recovers the missing quarters. A complete real-data run (June 2026, all §9
+diagnostics green) is archived as `reports/report_real_data.html`.
+
 ## What it produces
 
 | Where | What |

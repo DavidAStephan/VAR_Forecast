@@ -292,4 +292,14 @@ fragile retries).
 
 **Caveat recorded.** Trimmed-mean CPI is published as a quarterly rate and is
 cumulated to a synthetic index purely so the uniform dlog transform
-reproduces it; the round trip is exact up to float error.
+reproduces it; the round trip is exact up to float error. The same `pre:
+pct_change` mechanism handles any source published as a % change.
+
+**Freshness caveat (updated after the real-data run).** The key-free foreign
+activity series (IMF IFS US industrial production via DBnomics) lags by about
+a year, and the balanced panel is trimmed to the stalest series — the 2026-06
+real run therefore ends 2024 Q4. Setting `FRED_API_KEY` switches `f_act` to
+FRED INDPRO and recovers the missing quarters. The long-history RBA commodity
+index is `GRCPAISDR` (from 1982); the bulk-spot variant `GRCPAISAD` only
+starts in 2009 and silently truncated the panel — found and fixed in the
+first real-data run.

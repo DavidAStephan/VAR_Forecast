@@ -52,8 +52,10 @@ forecast_at_origin <- function(member, td_t, spec, cfg) {
     paths <- simulate_paths(post, y, H, nfd)
     glp_lambda <- NA_real_
   }
-  sanity <- check_forecasts(paths, as.matrix(td_t[, dimnames(paths)[[3]]]),
-                            label = member$name)
+  vnames <- dimnames(paths)[[3]]
+  sanity <- check_forecasts(paths, as.matrix(td_t[, vnames]),
+                            label = member$name,
+                            delta = spec$delta[match(vnames, spec$variable)])
   thin <- round(seq(1, dim(paths)[1], length.out = cfg$mcmc$store_draws))
   list(draws = paths[thin, , , drop = FALSE],
        diagnostics = post$diagnostics, sanity = sanity,

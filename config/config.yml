@@ -52,7 +52,7 @@ default:
       ss_mean: 0.0
       ss_sd: 1.0
       sets: [small, medium, alt_foreign]
-      source: {provider: rba, id: "GRCPAISAD"}
+      source: {provider: rba, id: "GRCPAISDR"}
       target: false
     f_rate:
       label: "Foreign policy rate (US fed funds)"

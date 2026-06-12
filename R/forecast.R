@@ -152,9 +152,13 @@ fan_quantiles <- function(paths, probs) {
   out
 }
 
-#' Forecast sanity (section 9): finite, non-explosive, long-horizon mean
-#' reversion toward an unconditional anchor.
-check_forecasts <- function(paths, y, label = "member") {
+#' Forecast sanity (section 9): finite, non-explosive, and -- for
+#' mean-reverting (delta = 0) variables only -- long-horizon reversion toward
+#' an unconditional anchor. Variables modelled as persistent levels
+#' (delta = 1: rates, log TWI/ToT) are deliberately near-unit-root, so
+#' 12-quarter reversion to the sample mean is NOT an implication of the model;
+#' they are checked for boundedness only.
+check_forecasts <- function(paths, y, label = "member", delta = NULL) {
   ok_finite <- all(is.finite(paths))
   rng <- apply(abs(y), 2, max)
   ok_bound <- TRUE
@@ -165,12 +169,15 @@ check_forecasts <- function(paths, y, label = "member") {
     ql <- apply(paths[, , j, drop = FALSE], 2, quantile, probs = c(0.005, 0.995))
     if (any(abs(ql) > bound)) ok_bound <- FALSE
   }
-  # convergence: |mean forecast - sample mean| should not grow from h=4 to h=H
   H <- dim(paths)[2]
   ybar <- colMeans(y)
   dev4 <- abs(mean_path[min(4, H), ] - ybar)
   devH <- abs(mean_path[H, ] - ybar)
-  ok_converge <- all(devH <= pmax(dev4 * 1.5, 2 * apply(y, 2, sd)))
+  # 2.5 sd: flag genuine drift (the pathologies this catches are 10-100x sd),
+  # not honest persistence of a below-mean regime
+  rev_ok <- devH <= pmax(dev4 * 1.5, 2.5 * apply(y, 2, sd))
+  if (!is.null(delta)) rev_ok <- rev_ok | (delta == 1)
+  ok_converge <- all(rev_ok)
   ok <- ok_finite && ok_bound && ok_converge
   if (!ok) logger::log_warn(
     "forecast sanity FAILED for {label}: finite={ok_finite} bounded={ok_bound} converge={ok_converge}")
