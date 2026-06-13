@@ -27,6 +27,169 @@
   "—"
 }
 
+# ---- per-model narrative profiles (DECISIONS.md is the full rationale) --------
+# Hand-authored fields; the spec line and the eval evidence are auto-generated
+# so the profiles stay accurate as the suite/data change.
+.model_profiles <- list(
+  small_minn = list(
+    distinctive = paste0("The workhorse Minnesota BVAR, estimated by Gibbs with an ",
+      "*independent* Normal-inverse-Wishart prior — the engine required to impose ",
+      "block exogeneity, since asymmetric (equation-specific) prior variances cannot ",
+      "be represented by a Kronecker/conjugate prior. Shrinkage is data-driven (GLP ",
+      "marginal-likelihood), and sum-of-coefficients + dummy-initial-observation ",
+      "priors discipline the I(1) levels (rates, real TWI)."),
+    role = paste0("The central, representative small-SOE BVAR — the reference point the ",
+      "other small members are deliberate variations around (tighter, looser, ",
+      "steady-state, SV)."),
+    watch = paste0("Solid all-rounder at short-to-medium horizons. Constant volatility ",
+      "means it leans on the LP scaling for 2020; without it the 2020 outliers would ",
+      "distort the coefficients."),
+    refs = "D3, D4, D5, D17"),
+  small_ss = list(
+    distinctive = paste0("Reparametrised around its *unconditional means* (Villani steady ",
+      "state), with informative priors placed directly on long-run levels — inflation ",
+      "2.5% (target midpoint), NAIRU 4.5%, neutral cash rate 3.5%, US potential growth — ",
+      "and on the foreign block's steady states, which the domestic forecast inherits."),
+    role = paste0("The **long-horizon anchor**. An iterated VAR reverts to its ",
+      "unconditional mean at h = 8-12; this member makes that mean economically grounded ",
+      "rather than the raw sample average."),
+    watch = paste0("Strongest at medium/far horizons for the mean-reverting targets. ",
+      "Vulnerable if a steady-state anchor is stale (e.g. a shifted neutral rate drags the ",
+      "long end); constant volatility under-disperses around 2020 absent the LP correction."),
+    refs = "D3, D4, D5, D17"),
+  small_sv = list(
+    distinctive = paste0("Stochastic volatility estimated equation-by-equation (the ",
+      "Carriero-Clark-Marcellino triangular factorisation), with t-distributed errors ",
+      "(the CCMM SV-t COVID treatment). Block exogeneity is *exact* — foreign equations ",
+      "simply drop the domestic regressors."),
+    role = paste0("The **density-calibration specialist**: time-varying volatility tracks ",
+      "changing macro uncertainty and the fat tails absorb outliers instead of letting ",
+      "them widen the whole history."),
+    watch = paste0("Best at short horizons (h = 1-2), where getting the conditional variance ",
+      "right matters most. The volatility state at the jump-off can over/under-shoot if the ",
+      "last few quarters were unusual; the small system limits cross-variable information."),
+    refs = "D3, D6, D17"),
+  small_loose_p5 = list(
+    distinctive = paste0("A deliberately *under-shrunk*, longer-lag variant — fixed ",
+      "λ = 0.4 (vs the ~0.1-0.15 the GLP procedure selects) and 5 lags — so the data speak ",
+      "more and richer dynamics can show through, at the cost of estimation noise."),
+    role = paste0("The **loose / long-lag** diversity axis: it fails differently from the ",
+      "tightly-shrunk members and can capture dynamics they shrink away."),
+    watch = paste0("Occasionally best at near-horizon density when the extra flexibility pays; ",
+      "noisier and prone to wider intervals at long horizons (the cost of light shrinkage in ",
+      "a short sample)."),
+    refs = "D4, D8"),
+  medium_minn = list(
+    distinctive = paste0("The larger system — 13 variables (adds terms of trade, wages, ",
+      "employment, consumption, the 10y yield) with stochastic volatility and t-errors, but ",
+      "only 2 lags to keep the parameter count feasible; equation-by-equation estimation keeps ",
+      "the recursive loop tractable."),
+    role = paste0("The **medium-system** axis (Banbura-Giannone-Reichlin): medium systems often ",
+      "forecast best given enough shrinkage, and the extra variables bring cross-sectional ",
+      "information the small core lacks."),
+    watch = paste0("Strong short-horizon density (it tends to win the near bucket). The short ",
+      "lag length limits long-horizon dynamics, and more parameters mean more estimation ",
+      "uncertainty at the far end."),
+    refs = "D1, D6, D17"),
+  medium_conj = list(
+    distinctive = paste0("The medium system estimated by the fast *block-recursive conjugate* ",
+      "scheme (foreign VAR + domestic block conditioned on contemporaneous foreign values, the ",
+      "RBNZ Bloor-Matheson approach) — closed-form, so cheap even at 13 variables x 4 lags. ",
+      "Block exogeneity is exact by the recursive structure, not the prior."),
+    role = paste0("The cheap medium workhorse; it complements `medium_minn` (conjugate ",
+      "constant-volatility vs SV) on the same large system."),
+    watch = paste0("Tends to lead the far-horizon GDP year-ended / cumulative-level buckets. ",
+      "Constant volatility leans on LP for 2020; the conjugate Kronecker prior cannot represent ",
+      "asymmetric shrinkage, which is why block exogeneity comes from the recursive structure."),
+    refs = "D3, D5, D8"),
+  small_tight = list(
+    distinctive = paste0("The heavily-shrunk small model — fixed λ = 0.05, far tighter than the ",
+      "GLP selection — pulling hard toward the persistence/random-walk prior, so it is ",
+      "parsimonious and low-variance."),
+    role = paste0("The **tight** diversity axis and the long-horizon robustness member: heavy ",
+      "shrinkage buys stability where lightly-parametrised models wander."),
+    watch = paste0("Best or near-best at far-horizon GDP (the tight prior stops it over-reacting). ",
+      "Can be too rigid at short horizons, missing genuine dynamics the looser members catch."),
+    refs = "D4, D5, D8"))
+
+.benchmark_profiles <- list(
+  rw = list(
+    distinctive = "The no-change forecast: the last observed value persists, with Gaussian increments scaled to the historical change.",
+    role = "The universal hard-to-beat short-horizon bar for persistent/level variables, and a pool member.",
+    watch = "Competitive at h = 1 for level variables; fails badly at long horizons for growth variables — its level path runs away, which the cumulative-level metric (§2e) exposes brutally.",
+    refs = "D8"),
+  ar4 = list(
+    distinctive = "A Bayesian AR(4) per variable with Minnesota-style lag shrinkage and a stationarity-truncated posterior.",
+    role = "The univariate-persistence bar — it isolates how much of the forecast is just own-history dynamics.",
+    watch = "Surprisingly strong for inflation at near/medium horizons, where univariate dynamics dominate; it cannot use cross-variable information, so it lags when that matters.",
+    refs = "D8"),
+  ucsv = list(
+    distinctive = "Stock-Watson unobserved-components stochastic volatility per variable: a random-walk trend plus transitory noise, both with time-varying variances and outlier-robust t-errors.",
+    role = "The canonical inflation benchmark and a genuine density anchor for the other targets.",
+    watch = "Strong for inflation (its native use case); weaker for variables with richer multivariate dynamics. The trend/noise split is weakly identified, so it is gated on Monte-Carlo precision, not raw ESS.",
+    refs = "D9, D17"),
+  ucmean = list(
+    distinctive = "A Gaussian density centred on the expanding-sample mean with the sample variance — the simplest possible density forecast.",
+    role = "The floor: the 'did the model beat just predicting the long-run average' bar.",
+    watch = "Unexpectedly competitive at long horizons for mean-reverting growth (everything reverts to the mean eventually); useless at short horizons where dynamics matter.",
+    refs = "D8"))
+
+.combo_profiles <- list(
+  combo_equal = list(
+    how = "Equal weights on every member, per variable x horizon bucket.",
+    note = "The forecast-combination-puzzle benchmark and the recommended robust default: in the evaluation it has the best mean log score at every horizon and the best far-horizon CRPS. Hard to beat because it never over-fits weights."),
+  combo_logscore = list(
+    how = "Weights proportional to each member's recent log predictive score, with a forgetting factor, shrunk toward equal.",
+    note = "Adapts to which members are forecasting well lately; the shrinkage and forgetting guard against over-concentrating on a member that was lucky."),
+  combo_pool = list(
+    how = "Optimal prediction pool (Hall-Mitchell / Geweke-Amisano): weights on the simplex that maximise the historical *pooled* log score, shrunk toward equal.",
+    note = "Unlike BMA it does not degenerate to a single model ('all models are false but useful'); competitive with equal weights and occasionally better at near horizons."),
+  combo_bma = list(
+    how = "Bayesian model averaging by predictive likelihood — no shrinkage.",
+    note = "**Diagnostic only.** It concentrates weight on the single best-fitting member, so it answers 'which model does the data favour' rather than serving as a robust combination; reported, not recommended."))
+
+#' Auto-generated one-line spec for a VAR suite member.
+.spec_oneliner <- function(m, cfg) {
+  size <- if (m$set == "small") "8-variable small SOE core"
+          else if (m$set == "medium") "13-variable medium system" else m$set
+  lam <- if (identical(m$prior$lambda, "auto")) "GLP marginal-likelihood shrinkage"
+         else paste0("fixed shrinkage λ=", m$prior$lambda)
+  vol <- if (m$engine == "sv") "stochastic volatility" else "constant volatility"
+  parts <- c(.engine_desc[[m$engine]], size, paste0(m$lags, " lags"), lam, vol,
+             paste0(.covid_desc(m$engine, cfg$covid$treatment), " (COVID)"))
+  extras <- c()
+  if (isTRUE(m$prior$soc)) extras <- c(extras, "sum-of-coefficients")
+  if (isTRUE(m$prior$dio)) extras <- c(extras, "dummy-initial-observation")
+  if (length(extras))
+    parts <- c(parts, paste0(paste(extras, collapse = " + "), " priors"))
+  paste(parts, collapse = "; ")
+}
+
+#' Auto-computed eval evidence: where a member ranks best among the individual
+#' models (excludes combinations) by mean quarterly CRPS, across variable x
+#' horizon bucket.
+.member_evidence <- function(scores, member, tgt, buckets, pool) {
+  res <- list()
+  for (v in tgt) for (bn in names(buckets)) {
+    d <- scores[scores$measure == "q" & scores$variable == v &
+                scores$h %in% buckets[[bn]] & scores$member %in% pool, ]
+    if (!nrow(d)) next
+    agg <- aggregate(crps ~ member, d, mean)
+    agg <- agg[order(agg$crps), ]
+    rk <- match(member, agg$member)
+    if (!is.na(rk)) res[[length(res) + 1]] <- list(v = v, bn = bn, rank = rk, n = nrow(agg))
+  }
+  if (!length(res)) return("")
+  ones <- Filter(function(x) x$rank == 1, res)
+  if (length(ones))
+    return(paste0("best individual model for ",
+                  paste(sapply(ones, function(x) paste0(x$v, " at ", x$bn)),
+                        collapse = "; "), "."))
+  b <- res[[which.min(sapply(res, function(x) x$rank))]]
+  paste0("strongest at ", b$v, " (", b$bn, "), ranked ", b$rank, " of ", b$n,
+         " individual models.")
+}
+
 #' Markdown table: members (rows) x horizons (cols) of a metric, best per
 #' column bolded. better = "low" (CRPS, RMSE) or "high" (log score).
 .metric_table <- function(scores, variable, measure, metric, horizons, better) {
@@ -271,7 +434,51 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
     }
   }
 
-  add("\n## 5. How to read this\n")
+  # ---- 5. Model profiles ----
+  add("\n## 5. Model profiles\n")
+  add("One entry per model: its specification, what makes it distinct, the role it ",
+      "plays in the suite, its strengths and failure modes, and where it actually ",
+      "ranks in this evaluation (the eval line is computed, not asserted). Full ",
+      "rationale is in DECISIONS.md.\n")
+  pool <- vapply(c(cfg$suite, lapply(cfg$benchmarks, function(b) list(name = b))),
+                 `[[`, "", "name")   # individual models (excludes combinations)
+  add("### 5a. VAR members\n")
+  for (m in cfg$suite) {
+    p <- .model_profiles[[m$name]]
+    add("**`", m$name, "`**  ")
+    add("*Spec:* ", .spec_oneliner(m, cfg), ".  ")
+    if (!is.null(p)) {
+      add("*Distinctive:* ", p$distinctive, "  ")
+      add("*Role:* ", p$role, "  ")
+      add("*Strengths & failure modes:* ", p$watch, "  ")
+    }
+    add("*In this evaluation:* ", .member_evidence(scores, m$name, tgt, buckets, pool), "  ")
+    if (!is.null(p)) add("*See:* DECISIONS.md ", p$refs, "\n") else add("\n")
+  }
+  add("### 5b. Benchmark members\n")
+  for (b in cfg$benchmarks) {
+    p <- .benchmark_profiles[[b]]
+    add("**`", b, "`**  ")
+    add("*Spec:* ", .engine_desc[[b]], "; ", .covid_desc(b, cfg$covid$treatment),
+        " (COVID).  ")
+    if (!is.null(p)) {
+      add("*Distinctive:* ", p$distinctive, "  ")
+      add("*Role:* ", p$role, "  ")
+      add("*Strengths & failure modes:* ", p$watch, "  ")
+    }
+    add("*In this evaluation:* ", .member_evidence(scores, b, tgt, buckets, pool), "  ")
+    if (!is.null(p)) add("*See:* DECISIONS.md ", p$refs, "\n") else add("\n")
+  }
+  add("### 5c. Combination schemes\n")
+  for (cs in c("combo_equal", "combo_logscore", "combo_pool", "combo_bma")) {
+    p <- .combo_profiles[[cs]]
+    if (is.null(p)) next
+    add("**`", cs, "`**  ")
+    add("*Weights:* ", p$how, "  ")
+    add("*In this evaluation:* ", p$note, "\n")
+  }
+
+  add("\n## 6. How to read this\n")
   add("- **Point gains over the best member are modest by design** — equal ",
       "weights are hard to beat (the forecast-combination puzzle). The pool's ",
       "payoff is *calibration and robustness*: it insures against any single ",

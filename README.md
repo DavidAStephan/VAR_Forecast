@@ -60,7 +60,7 @@ diagnostics green) is archived as `reports/report_real_data.html`.
 | `output/tables/` | scores by horizon (log score, CRPS, RMSE), DM tests, diagnostics, transform spec, combination weights |
 | `output/figures/` | fan charts, PIT calibration histograms, weight-evolution plots, CRPS-by-horizon plots |
 | `output/forecasts/` | combined + per-member point/interval forecast table |
-| `reports/model_scorecard.md` | **one-page scorecard**: every model + its specification, and forecast performance (CRPS / log score / RMSE) by variable and horizon |
+| `reports/model_scorecard.md` | **the scorecard**: spec table for every model; forecast performance (CRPS / log score / RMSE, plus year-ended and cumulative-level) by variable and horizon; and a **per-model profile** (spec, role, strengths/failure modes, and where each model actually ranks) for every member |
 | `reports/report.html` | rendered Quarto report (methodology + results narrative, fan charts, PIT calibration) |
 | `DECISIONS.md` | the dated log of every modelling choice and its rationale |
 
