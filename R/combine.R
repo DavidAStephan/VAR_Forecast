@@ -157,6 +157,12 @@ combine_all <- function(scores, draws_env, td, spec, cfg) {
                 })
                 names(dmat) <- members
                 dl_use <- .ye_from_q(dmat, td, v, h, t)
+              } else if (msr == "cum") {
+                # cumulative level: sum of quarterly draws 1..h per member
+                dl_use <- lapply(members, function(m)
+                  rowSums(do.call(cbind, lapply(seq_len(h), function(hh)
+                    get(paste(t, v, hh, sep = "|"), draws_env)[[m]]))))
+                names(dl_use) <- members
               } else dl_use <- dl
               mix <- unlist(lapply(seq_along(members), function(i) {
                 if (cnt[i] == 0) return(numeric(0))

@@ -92,3 +92,33 @@ test_that("DM test flags an obviously inferior forecast", {
   expect_lt(r["p"], 0.01)
   expect_gt(r["stat"], 0)
 })
+
+test_that("score_member computes q, year-ended and cumulative-level measures", {
+  set.seed(1)
+  H <- 4; ndraw <- 200
+  # one dlog target 'g' and one level target 'r'
+  td <- data.frame(date = seq(as.Date("2000-01-01"), by = "quarter", length.out = 12),
+                   g = rnorm(12, 0.6, 0.5), r = rnorm(12, 4, 0.3))
+  spec <- data.frame(variable = c("g", "r"), transform = c("dlog", "level"),
+                     target = c(TRUE, TRUE), year_ended = c(TRUE, FALSE),
+                     stringsAsFactors = FALSE)
+  cfg <- list()
+  t <- 6
+  dr <- array(rnorm(ndraw * H * 2, 0.5, 0.4), c(ndraw, H, 2),
+              dimnames = list(NULL, NULL, c("g", "r")))
+  oos <- list(list(origin = t, draws = dr))
+  sc <- score_member("m", oos, td, spec, cfg)
+  # cum exists for the dlog target only, h >= 2; never for the level target
+  expect_true(all(sc$variable[sc$measure == "cum"] == "g"))
+  expect_equal(sort(unique(sc$h[sc$measure == "cum"])), 2:4)
+  expect_equal(nrow(sc[sc$measure == "cum" & sc$variable == "r", ]), 0)
+  # the cumulative realized value at h=3 is the sum of the 3 quarterly outcomes
+  cum3 <- sc[sc$measure == "cum" & sc$h == 3, ]
+  expect_equal(cum3$real, sum(td$g[(t + 1):(t + 3)]))
+  # and its CRPS matches scoring the summed draws directly
+  expect_equal(cum3$crps,
+               crps_sample(sum(td$g[(t + 1):(t + 3)]), rowSums(dr[, 1:3, "g"])),
+               tolerance = 1e-9)
+  # at h=1 cum is omitted (equals q); q still present at all horizons
+  expect_equal(sort(unique(sc$h[sc$measure == "q" & sc$variable == "g"])), 1:4)
+})

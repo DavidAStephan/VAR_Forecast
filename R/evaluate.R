@@ -118,8 +118,17 @@ run_oos_member <- function(member, td, spec, cfg, cache_root = "cache") {
 # ---- scoring --------------------------------------------------------------------
 
 #' Score one member's OOS results against realizations. Returns a long
-#' data.frame: origin, date, variable, measure (q|ye), h, point, real, logdens,
-#' crps, pit. Year-ended rows combine forecast draws with realized history.
+#' data.frame: origin, date, variable, measure, h, point, real, logdens, crps,
+#' pit. Measures, per target variable:
+#'   q   - the modelled variable at quarter t+h (quarterly growth for dlog
+#'         variables; the level for level variables).
+#'   ye  - year-ended: the 4-quarter sum ending at t+h (dlog targets only) --
+#'         the RBA's headline concept (e.g. year-ended GDP growth / trimmed-mean
+#'         inflation, the 2-3% target).
+#'   cum - cumulative level from the origin: the h-quarter sum t+1..t+h (dlog
+#'         variables only) = 100*(log level_{t+h} - log level_t), i.e. where the
+#'         level lands h quarters out. Redundant with q at h=1; for level
+#'         variables it equals a constant shift of q and is omitted.
 score_member <- function(member_name, oos_res, td, spec, cfg) {
   T_n <- nrow(td)
   tgt <- spec$variable[spec$target]
@@ -156,6 +165,18 @@ score_member <- function(member_name, oos_res, td, spec, cfg) {
             logdens = -scoringRules::logs_sample(ye_real, xye),
             crps = scoringRules::crps_sample(ye_real, xye),
             pit = mean(xye <= ye_real))
+        }
+        # cumulative level from the origin: sum of quarterly draws t+1..t+h
+        if (vt$transform == "dlog" && h >= 2) {
+          xcum <- rowSums(dr[, seq_len(h), v, drop = FALSE])
+          cum_real <- sum(real_q[(t + 1):(t + h)])
+          rows[[length(rows) + 1]] <- data.frame(
+            member = member_name, origin = t, date = td$date[t + h],
+            variable = v, measure = "cum", h = h,
+            point = mean(xcum), real = cum_real,
+            logdens = -scoringRules::logs_sample(cum_real, xcum),
+            crps = scoringRules::crps_sample(cum_real, xcum),
+            pit = mean(xcum <= cum_real))
         }
       }
     }

@@ -85,6 +85,10 @@
 write_model_scorecard <- function(scores, spec, dm, diag, cfg,
                                   src = "real", panel = "1997Q4-2026Q1",
                                   out_path = "reports/model_scorecard.md") {
+  # scores arrives PER ORIGIN (member x origin x variable x measure x h);
+  # collapse to mean scores per (member, variable, measure, h) so every table
+  # below shows the average over forecast origins, not a single origin.
+  if ("origin" %in% names(scores)) scores <- summarise_scores(scores)
   tgt <- spec$variable[spec$target == TRUE | spec$target == "TRUE"]
   hcols <- c(1, 2, 4, 8, 12)
   buckets <- list(`near (1-4)` = 1:4, `medium (5-8)` = 5:8, `far (9-12)` = 9:12)
@@ -178,6 +182,40 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
     transform(ls_all, variable = "all", measure = "q"),
     "all", "q", "logdens", hcols, "high"), "\n")
 
+  # ---- 2e. integrated measures for growth variables ----
+  dlog_tgt <- spec$variable[spec$target %in% c(TRUE, "TRUE") &
+                            spec$transform == "dlog"]
+  has_int <- length(dlog_tgt) &&
+    any(scores$measure %in% c("ye", "cum"))
+  if (has_int) {
+    add("\n### 2e. Year-ended and cumulative-level accuracy (growth variables)\n")
+    add("For GDP and inflation (modelled as quarterly growth), the `q` score ",
+        "above is the marginal rate *in that one quarter* — the narrowest, least ",
+        "predictable view at long horizons. Two integrated views matter more for ",
+        "policy and are scored here:\n")
+    add("- **Year-ended** (`ye`, 4-quarter sum ending at t+h): the RBA's headline ",
+        "concept — year-ended GDP growth, and the 2-3% *year-ended* trimmed-mean ",
+        "inflation target.\n")
+    add("- **Cumulative level** (`cum`, the h-quarter sum from the origin = ",
+        "100·(log level_{t+h} − log level_t)): where the level lands h quarters ",
+        "out. Far more discriminating than the single quarter — a model that gets ",
+        "the persistent/drift component wrong (e.g. the random walk) is exposed ",
+        "here but not by the quarterly score.\n")
+    add("(For level variables — unemployment, cash rate — the `q` score already ",
+        "*is* the level at t+h, so no separate cumulative view is needed. At ",
+        "h=4 the two measures below coincide by construction — both span the 4 ",
+        "quarters from the origin — and diverge from h=8 on.)\n")
+    hi <- c(4, 8, 12)
+    for (v in dlog_tgt) {
+      lbl <- spec$label[spec$variable == v]
+      add("**", lbl, " (`", v, "`) — CRPS, lower better**\n")
+      add("Year-ended:\n")
+      add(.metric_table(scores, v, "ye", "crps", hi, "low"), "\n")
+      add("Cumulative level (from forecast origin):\n")
+      add(.metric_table(scores, v, "cum", "crps", hi, "low"), "\n")
+    }
+  }
+
   # ---- 3. Combination vs best member ----
   add("\n## 3. Do the combinations beat the best single model?\n")
   add("Mean CRPS over all 4 targets, by horizon bucket. The honest test of a ",
@@ -241,9 +279,12 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
   add("- **CRPS and log score can disagree** on outlier-heavy windows (log ",
       "score is far more sensitive to tail events); both are reported. A ",
       "COVID-excluded variant is in `output/tables/scores_by_horizon_excovid.csv`.\n")
-  add("- Year-ended (policy-relevant) transforms are scored too; this scorecard ",
-      "shows quarterly. See the full Quarto report for fan charts, PIT calibration, ",
-      "and weight-evolution plots.\n")
+  add("- **Pick the horizon view to match the decision.** The quarterly score ",
+      "(§2b) is the marginal growth rate; for GDP and inflation the year-ended ",
+      "and cumulative-level views (§2e) are usually what a central bank acts on, ",
+      "and they rank models differently at long horizons. For level variables the ",
+      "quarterly score already is the level. See the full Quarto report for fan ",
+      "charts, PIT calibration, and weight-evolution plots.\n")
 
   dir.create(dirname(out_path), recursive = TRUE, showWarnings = FALSE)
   writeLines(L, out_path)

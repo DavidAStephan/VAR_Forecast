@@ -8,3 +8,4 @@ output/
 renv/library/
 renv/staging/
 .Renviron
+.DS_Store
