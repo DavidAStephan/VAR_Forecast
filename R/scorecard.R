@@ -65,9 +65,10 @@
     role = paste0("The **density-calibration specialist**: time-varying volatility tracks ",
       "changing macro uncertainty and the fat tails absorb outliers instead of letting ",
       "them widen the whole history."),
-    watch = paste0("Best at short horizons (h = 1-2), where getting the conditional variance ",
-      "right matters most. The volatility state at the jump-off can over/under-shoot if the ",
-      "last few quarters were unusual; the small system limits cross-variable information."),
+    watch = paste0("Its SV captures the time-varying conditional variance, so it stays ",
+      "well-calibrated when uncertainty shifts — competitive on the GDP level at medium ",
+      "horizons. The volatility state at the jump-off can over/under-shoot if the last few ",
+      "quarters were unusual; the small system limits cross-variable information."),
     refs = "D3, D6, D17"),
   small_loose_p5 = list(
     distinctive = paste0("A deliberately *under-shrunk*, longer-lag variant — fixed ",
@@ -98,9 +99,9 @@
       "Block exogeneity is exact by the recursive structure, not the prior."),
     role = paste0("The cheap medium workhorse; it complements `medium_minn` (conjugate ",
       "constant-volatility vs SV) on the same large system."),
-    watch = paste0("Tends to lead the far-horizon GDP year-ended / cumulative-level buckets. ",
-      "Constant volatility leans on LP for 2020; the conjugate Kronecker prior cannot represent ",
-      "asymmetric shrinkage, which is why block exogeneity comes from the recursive structure."),
+    watch = paste0("Tends to lead the far-horizon GDP level error. Constant volatility ",
+      "leans on LP for 2020; the conjugate Kronecker prior cannot represent asymmetric ",
+      "shrinkage, which is why block exogeneity comes from the recursive structure."),
     refs = "D3, D5, D8"),
   small_tight = list(
     distinctive = paste0("The heavily-shrunk small model — fixed λ = 0.05, far tighter than the ",
@@ -116,7 +117,7 @@
   rw = list(
     distinctive = "The no-change forecast: the last observed value persists, with Gaussian increments scaled to the historical change.",
     role = "The universal hard-to-beat short-horizon bar for persistent/level variables, and a pool member.",
-    watch = "Competitive at h = 1 for level variables; fails badly at long horizons for growth variables — its level path runs away, which the cumulative-level metric (§2e) exposes brutally.",
+    watch = "Competitive at h = 1 for level variables; fails badly at long horizons — its level path runs away, which the level-error tables (§2) expose brutally.",
     refs = "D8"),
   ar4 = list(
     distinctive = "A Bayesian AR(4) per variable with Minnesota-style lag shrinkage and a stationarity-truncated posterior.",
@@ -168,10 +169,10 @@
 #' Auto-computed eval evidence: where a member ranks best among the individual
 #' models (excludes combinations) by mean quarterly CRPS, across variable x
 #' horizon bucket.
-.member_evidence <- function(scores, member, tgt, buckets, pool) {
+.member_evidence <- function(scores, member, tgt, buckets, pool, measure = "level") {
   res <- list()
   for (v in tgt) for (bn in names(buckets)) {
-    d <- scores[scores$measure == "q" & scores$variable == v &
+    d <- scores[scores$measure == measure & scores$variable == v &
                 scores$h %in% buckets[[bn]] & scores$member %in% pool, ]
     if (!nrow(d)) next
     agg <- aggregate(crps ~ member, d, mean)
@@ -229,12 +230,12 @@
 
 #' "Who wins" matrix: best model (by mean CRPS over all 12 horizons) per
 #' variable x horizon bucket.
-.winner_matrix <- function(scores, variables, buckets) {
+.winner_matrix <- function(scores, variables, buckets, measure = "level") {
   hdr <- paste0("| Variable | ", paste(names(buckets), collapse = " | "), " |")
   sep <- paste0("|", paste(rep(":--", length(buckets) + 1), collapse = "|"), "|")
   rows <- vapply(variables, function(v) {
     cells <- vapply(buckets, function(hs) {
-      d <- scores[scores$variable == v & scores$measure == "q" & scores$h %in% hs, ]
+      d <- scores[scores$variable == v & scores$measure == measure & scores$h %in% hs, ]
       agg <- aggregate(crps ~ member, d, mean)
       w <- agg$member[which.min(agg$crps)]
       sprintf("%s (%.3f)", w, min(agg$crps))
@@ -243,6 +244,32 @@
   }, "")
   paste(c(hdr, sep, rows), collapse = "\n")
 }
+
+#' The LEVEL-error view -- the headline of this report. For each target it is
+#' the forecast error of the underlying series' LEVEL at quarter t+h:
+#'   - growth-modelled (dlog) variables (GDP, inflation): the cumulative level
+#'     from the forecast origin, 100*(log level_{t+h} - log level_t) = the `cum`
+#'     measure for h>=2, and `q` at h=1 (where cum == q);
+#'   - level-modelled variables (unemployment, cash rate): the rate level at
+#'     t+h, which is already the `q` measure.
+#' Returns the summarised scores relabelled measure="level".
+.level_view <- function(scores, spec) {
+  tgt <- spec$variable[spec$target %in% c(TRUE, "TRUE")]
+  out <- lapply(tgt, function(v) {
+    if (identical(spec$transform[spec$variable == v], "dlog"))
+      rbind(scores[scores$variable == v & scores$measure == "cum", ],
+            scores[scores$variable == v & scores$measure == "q" & scores$h == 1, ])
+    else
+      scores[scores$variable == v & scores$measure == "q", ]
+  })
+  d <- do.call(rbind, out)
+  d$measure <- "level"
+  d
+}
+
+#' The level measure used per target (cum for growth-modelled, q for levels).
+.level_measure <- function(v, spec)
+  if (identical(spec$transform[spec$variable == v], "dlog")) "cum" else "q"
 
 #' Full scorecard markdown.
 write_model_scorecard <- function(scores, spec, dm, diag, cfg,
@@ -253,8 +280,9 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
   # below shows the average over forecast origins, not a single origin.
   if ("origin" %in% names(scores)) scores <- summarise_scores(scores)
   tgt <- spec$variable[spec$target == TRUE | spec$target == "TRUE"]
-  hcols <- c(1, 2, 4, 8, 12)
+  hcols <- c(1, 4, 8, 12)
   buckets <- list(`near (1-4)` = 1:4, `medium (5-8)` = 5:8, `far (9-12)` = 9:12)
+  lvl <- .level_view(scores, spec)        # the headline LEVEL-error view
   L <- c()
   add <- function(...) L <<- c(L, paste0(...))
 
@@ -266,6 +294,13 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
   add("**Evaluation:** expanding-window pseudo-real-time, ",
       cfg$evaluation$max_origins, " forecast origins; densities scored by CRPS ",
       "and log predictive density, points by RMSE, all by horizon.  ")
+  add("**Headline metric — the LEVEL error.** Performance is reported on the ",
+      "forecast error of each series' *level* at quarter t+h: for GDP and ",
+      "inflation (modelled as growth) the cumulative level from the forecast ",
+      "origin — where real GDP and the price level land — and for unemployment ",
+      "and the cash rate the rate level itself. The quarterly and year-ended ",
+      "*growth* scores are not shown here (they answer a different, narrower ",
+      "question); they remain in `output/tables/scores_by_horizon.csv`.  ")
   d9 <- all(diag$converged_all & diag$sanity_all & diag$no_lookahead & diag$reproducible) &&
         all(diag$block_exog_max < 1e-2)
   add("**Diagnostics (§9):** ", if (d9) "all green" else "SEE DIAGNOSTICS",
@@ -310,85 +345,59 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
   add("| `combo_pool` | Optimal prediction pool (Hall-Mitchell / Geweke-Amisano) |")
   add("| `combo_bma` | Bayesian model averaging — reported as a diagnostic only |")
 
-  # ---- 2. Performance ----
-  add("\n## 2. Forecast performance\n")
-  add("Lower CRPS / RMSE is better; higher log score is better. **Bold** = best ",
-      "in that column. Models ordered best-first (by mean over the shown horizons).\n")
+  # ---- 2. Performance (LEVEL errors) ----
+  add("\n## 2. Forecast performance — level errors\n")
+  add("All tables below score the **level** of each series at t+h (§ definition ",
+      "in the header): cumulative real GDP and the price level for the growth ",
+      "variables, the rate level for unemployment and the cash rate. Lower CRPS / ",
+      "RMSE is better; higher log score is better. **Bold** = best in that column. ",
+      "Models ordered best-first (mean over the shown horizons). The level errors ",
+      "grow with horizon (they accumulate the whole path), so the columns are not ",
+      "comparable across horizons — read down each column, not across.\n")
 
-  add("### 2a. Who forecasts best, by variable and horizon (CRPS)\n")
-  add("Best single model (lowest mean CRPS in the bucket; value in parentheses):\n")
-  add(.winner_matrix(scores, tgt, buckets), "\n")
+  add("### 2a. Who forecasts the level best, by variable and horizon bucket (CRPS)\n")
+  add("Best single model (lowest mean level CRPS in the bucket; value in parentheses):\n")
+  add(.winner_matrix(lvl, tgt, buckets, "level"), "\n")
 
-  add("### 2b. Density accuracy by variable and horizon (CRPS, lower better)\n")
+  add("### 2b. Level density accuracy by variable and horizon (CRPS, lower better)\n")
   for (v in tgt) {
     lbl <- spec$label[spec$variable == v]
-    add("**", lbl, " (`", v, "`)**\n")
-    add(.metric_table(scores, v, "q", "crps", hcols, "low"), "\n")
+    note <- if (identical(spec$transform[spec$variable == v], "dlog"))
+      " — cumulative level from the origin" else " — rate level at t+h"
+    add("**", lbl, " (`", v, "`)", note, "**\n")
+    add(.metric_table(lvl, v, "level", "crps", hcols, "low"), "\n")
   }
 
-  add("\n### 2c. Point accuracy by variable and horizon (RMSE, lower better)\n")
+  add("\n### 2c. Level point accuracy by variable and horizon (RMSE, lower better)\n")
   for (v in tgt) {
     add("**`", v, "`**\n")
-    add(.metric_table(scores, v, "q", "rmse", hcols, "low"), "\n")
+    add(.metric_table(lvl, v, "level", "rmse", hcols, "low"), "\n")
   }
 
-  add("\n### 2d. Density calibration — mean log predictive density (higher better)\n")
-  add("Averaged across the 4 targets. The mean log score is brutally sensitive ",
-      "to tail events: **−∞** means at least one origin where the realization ",
-      "fell outside that member's predictive support (an individual model can ",
-      "catastrophically miss a tail). The **combinations never do** — the linear ",
-      "pool always assigns positive density — which is the clearest single ",
-      "piece of evidence that pooling buys calibration and robustness.\n")
-  ls_all <- aggregate(logdens ~ member + h,
-                      scores[scores$measure == "q", ], mean)
+  add("\n### 2d. Level density calibration — mean log predictive density (higher better)\n")
+  add("Averaged across the 4 targets, on the level forecast. The mean log score is ",
+      "brutally sensitive to tail events: **−∞** means at least one origin where the ",
+      "realization fell outside that member's predictive support (an individual model ",
+      "can catastrophically miss a tail). The **combinations never do** — the linear ",
+      "pool always assigns positive density — which is the clearest single piece of ",
+      "evidence that pooling buys calibration and robustness.\n")
+  ls_all <- aggregate(logdens ~ member + h, lvl, mean)
   add(.metric_table(
-    transform(ls_all, variable = "all", measure = "q"),
-    "all", "q", "logdens", hcols, "high"), "\n")
-
-  # ---- 2e. integrated measures for growth variables ----
-  dlog_tgt <- spec$variable[spec$target %in% c(TRUE, "TRUE") &
-                            spec$transform == "dlog"]
-  has_int <- length(dlog_tgt) &&
-    any(scores$measure %in% c("ye", "cum"))
-  if (has_int) {
-    add("\n### 2e. Year-ended and cumulative-level accuracy (growth variables)\n")
-    add("For GDP and inflation (modelled as quarterly growth), the `q` score ",
-        "above is the marginal rate *in that one quarter* — the narrowest, least ",
-        "predictable view at long horizons. Two integrated views matter more for ",
-        "policy and are scored here:\n")
-    add("- **Year-ended** (`ye`, 4-quarter sum ending at t+h): the RBA's headline ",
-        "concept — year-ended GDP growth, and the 2-3% *year-ended* trimmed-mean ",
-        "inflation target.\n")
-    add("- **Cumulative level** (`cum`, the h-quarter sum from the origin = ",
-        "100·(log level_{t+h} − log level_t)): where the level lands h quarters ",
-        "out. Far more discriminating than the single quarter — a model that gets ",
-        "the persistent/drift component wrong (e.g. the random walk) is exposed ",
-        "here but not by the quarterly score.\n")
-    add("(For level variables — unemployment, cash rate — the `q` score already ",
-        "*is* the level at t+h, so no separate cumulative view is needed. At ",
-        "h=4 the two measures below coincide by construction — both span the 4 ",
-        "quarters from the origin — and diverge from h=8 on.)\n")
-    hi <- c(4, 8, 12)
-    for (v in dlog_tgt) {
-      lbl <- spec$label[spec$variable == v]
-      add("**", lbl, " (`", v, "`) — CRPS, lower better**\n")
-      add("Year-ended:\n")
-      add(.metric_table(scores, v, "ye", "crps", hi, "low"), "\n")
-      add("Cumulative level (from forecast origin):\n")
-      add(.metric_table(scores, v, "cum", "crps", hi, "low"), "\n")
-    }
-  }
+    transform(ls_all, variable = "all", measure = "level"),
+    "all", "level", "logdens", hcols, "high"), "\n")
 
   # ---- 3. Combination vs best member ----
   add("\n## 3. Do the combinations beat the best single model?\n")
-  add("Mean CRPS over all 4 targets, by horizon bucket. The honest test of a ",
-      "pool is whether it beats both equal weights and the best individual member.\n")
+  add("Mean **level** CRPS over all 4 targets, by horizon bucket. The honest test ",
+      "of a pool is whether it beats both equal weights and the best individual ",
+      "member. (Buckets average level errors of differing scale across horizons, so ",
+      "use this within a bucket to rank models, not to compare buckets.)\n")
   add("| Model | near (1-4) | medium (5-8) | far (9-12) |")
   add("|:--|:--|:--|:--|")
-  members <- unique(scores$member)
+  members <- unique(lvl$member)
   avg <- lapply(members, function(m) {
     sapply(buckets, function(hs) {
-      d <- scores[scores$member == m & scores$measure == "q" & scores$h %in% hs, ]
+      d <- lvl[lvl$member == m & lvl$h %in% hs, ]
       mean(d$crps)
     })
   })
@@ -408,29 +417,39 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
   if (!is.null(dm) && nrow(dm)) {
     add("\n## 4. Statistical significance (Diebold-Mariano)\n")
     add("How often each combination **significantly beats** the random-walk and ",
-        "AR(4) benchmarks on CRPS (Harvey-corrected, 10% level), counted over ",
-        "the 4 targets x 3 horizons {1, 4, 8} tested. A negative DM statistic ",
-        "means the combination is more accurate; significance is one-sided here.\n")
-    dd <- dm[grepl("^combo_", dm$member) & dm$measure == "q" & dm$h %in% c(1, 4, 8), ]
+        "AR(4) benchmarks on **level** CRPS (Harvey-corrected, 10% level), counted ",
+        "over the 4 targets x 3 horizons {4, 8, 12} tested. A negative DM statistic ",
+        "means the combination is more accurate; significance is one-sided here. ",
+        "Level errors are high-variance (they accumulate the path and are dominated ",
+        "by a few episodes such as 2020), so the DM test has low power on them — the ",
+        "combinations beat the benchmarks on *average* (§3) more often than they do ",
+        "*significantly*.\n")
+    # level DM: cumulative-level (cum) for growth variables, the rate level (q)
+    # for level variables. Significance is computed from p_crps (the dm target
+    # carries p_crps, not the star column).
+    dm_lvl <- do.call(rbind, lapply(tgt, function(v)
+      dm[dm$variable == v & dm$measure == .level_measure(v, spec), ]))
+    dm_lvl$beats <- dm_lvl$dm_crps < 0 & dm_lvl$p_crps < 0.10
+    dd <- dm_lvl[grepl("^combo_", dm_lvl$member) & dm_lvl$h %in% c(4, 8, 12), ]
     combos <- sort(unique(dd$member)); refs <- sort(unique(dd$reference))
     add("| Combination | ", paste0("beats ", refs, collapse = " | "), " |")
     add("|", paste(rep(":--", length(refs) + 1), collapse = "|"), "|")
     for (cm in combos) {
       cells <- vapply(refs, function(rf) {
         s <- dd[dd$member == cm & dd$reference == rf, ]
-        nbeat <- sum(s$dm_crps < 0 & !is.na(s$sig_crps) & s$sig_crps != "")
-        sprintf("%d / %d", nbeat, nrow(s))
+        sprintf("%d / %d", sum(s$beats, na.rm = TRUE), nrow(s))
       }, "")
       add(sprintf("| %s | %s |", cm, paste(cells, collapse = " | ")))
     }
-    strong <- dd[dd$dm_crps < 0 & dd$sig_crps %in% c("**", "***"), ]
+    star <- function(p) if (p < 0.01) "***" else if (p < 0.05) "**" else "*"
+    strong <- dd[which(dd$beats & dd$p_crps < 0.05), ]
     if (nrow(strong)) {
       strong <- strong[order(strong$p_crps), ]
       add("\nStrongest results (significant at 5% or better):\n")
       for (i in seq_len(min(6, nrow(strong))))
         add(sprintf("- `%s` beats `%s` on **%s** at h=%d (DM %.2f%s)",
                     strong$member[i], strong$reference[i], strong$variable[i],
-                    strong$h[i], strong$dm_crps[i], strong$sig_crps[i]))
+                    strong$h[i], strong$dm_crps[i], star(strong$p_crps[i])))
     }
   }
 
@@ -452,7 +471,8 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
       add("*Role:* ", p$role, "  ")
       add("*Strengths & failure modes:* ", p$watch, "  ")
     }
-    add("*In this evaluation:* ", .member_evidence(scores, m$name, tgt, buckets, pool), "  ")
+    add("*In this evaluation (level error):* ",
+        .member_evidence(lvl, m$name, tgt, buckets, pool, "level"), "  ")
     if (!is.null(p)) add("*See:* README.md ", p$refs, "\n") else add("\n")
   }
   add("### 5b. Benchmark members\n")
@@ -466,7 +486,8 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
       add("*Role:* ", p$role, "  ")
       add("*Strengths & failure modes:* ", p$watch, "  ")
     }
-    add("*In this evaluation:* ", .member_evidence(scores, b, tgt, buckets, pool), "  ")
+    add("*In this evaluation (level error):* ",
+        .member_evidence(lvl, b, tgt, buckets, pool, "level"), "  ")
     if (!is.null(p)) add("*See:* README.md ", p$refs, "\n") else add("\n")
   }
   add("### 5c. Combination schemes\n")
@@ -479,19 +500,23 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
   }
 
   add("\n## 6. How to read this\n")
+  add("- **The metric is the level error.** For GDP and inflation it is the ",
+      "cumulative level from the forecast origin (where real GDP and the price ",
+      "level land h quarters out); for unemployment and the cash rate it is the ",
+      "rate level at t+h. Level errors accumulate the whole forecast path, so they ",
+      "grow with horizon and are far more discriminating than the single-quarter ",
+      "growth rate — a model that gets the persistent/drift component wrong (e.g. ",
+      "the random walk) is exposed here. The quarterly and year-ended *growth* ",
+      "scores live in `output/tables/scores_by_horizon.csv` if you need them.\n")
   add("- **Point gains over the best member are modest by design** — equal ",
       "weights are hard to beat (the forecast-combination puzzle). The pool's ",
       "payoff is *calibration and robustness*: it insures against any single ",
       "member failing, rather than always winning on accuracy.\n")
   add("- **CRPS and log score can disagree** on outlier-heavy windows (log ",
       "score is far more sensitive to tail events); both are reported. A ",
-      "COVID-excluded variant is in `output/tables/scores_by_horizon_excovid.csv`.\n")
-  add("- **Pick the horizon view to match the decision.** The quarterly score ",
-      "(§2b) is the marginal growth rate; for GDP and inflation the year-ended ",
-      "and cumulative-level views (§2e) are usually what a central bank acts on, ",
-      "and they rank models differently at long horizons. For level variables the ",
-      "quarterly score already is the level. See the full Quarto report for fan ",
-      "charts, PIT calibration, and weight-evolution plots.\n")
+      "COVID-excluded variant is in `output/tables/scores_by_horizon_excovid.csv`. ",
+      "See the full Quarto report for fan charts, PIT calibration, and ",
+      "weight-evolution plots.\n")
 
   dir.create(dirname(out_path), recursive = TRUE, showWarnings = FALSE)
   writeLines(L, out_path)

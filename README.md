@@ -73,7 +73,7 @@ diagnostics green) is archived as `reports/report_real_data.html`.
 
 | Where | What |
 |---|---|
-| `reports/model_scorecard.md` | **the scorecard**: spec table for every model; forecast performance (CRPS / log score / RMSE, plus year-ended and cumulative-level) by variable and horizon; and a **per-model profile** (spec, role, strengths/failure modes, and where each model actually ranks) for every member |
+| `reports/model_scorecard.md` (+ `.pdf`) | **the scorecard**: spec table for every model; forecast performance on the **level** error (CRPS / log score / RMSE by variable and horizon — cumulative level for GDP/inflation, the rate level for unemployment/cash rate); and a **per-model profile** (spec, role, strengths/failure modes, and where each model actually ranks) for every member |
 | `reports/report.html` | rendered Quarto report (methodology + results narrative, fan charts, PIT calibration) |
 | `output/tables/` | scores by horizon (log score, CRPS, RMSE), DM tests, diagnostics, transform spec, combination weights |
 | `output/figures/` | fan charts, PIT calibration histograms, weight-evolution plots, CRPS-by-horizon plots |

@@ -160,14 +160,23 @@ plot_weights <- function(weights, td, scheme = "pool", v, bucket = "near",
 }
 
 #' Score-by-horizon plot (mean CRPS by h), members vs combinations.
-plot_scores_by_h <- function(allscores, v, out_dir = "output/figures") {
-  sm <- summarise_scores(allscores[allscores$variable == v &
-                                   allscores$measure == "q", ])
+plot_scores_by_h <- function(allscores, v, spec, out_dir = "output/figures") {
+  # LEVEL error: cumulative level (cum, + q at h=1) for growth-modelled
+  # variables; the rate level (q) for level-modelled variables.
+  is_dlog <- identical(spec$transform[spec$variable == v], "dlog")
+  d <- if (is_dlog)
+    rbind(allscores[allscores$variable == v & allscores$measure == "cum", ],
+          allscores[allscores$variable == v & allscores$measure == "q" &
+                    allscores$h == 1, ])
+  else allscores[allscores$variable == v & allscores$measure == "q", ]
+  sm <- summarise_scores(d)
   sm$type <- ifelse(grepl("^combo_", sm$member), "combination", "member")
+  lab <- if (is_dlog) "cumulative level from origin" else "rate level"
   g <- ggplot(sm, aes(h, crps, color = member, linetype = type)) +
     geom_line() + geom_point(size = 0.8) +
-    labs(title = paste0("Mean CRPS by horizon — ", v), x = "horizon (quarters)",
-         y = "CRPS (lower = better)") + .theme()
+    labs(title = paste0("Mean level CRPS by horizon — ", v),
+         x = "horizon (quarters)",
+         y = paste0("level CRPS, ", lab, " (lower = better)")) + .theme()
   f <- file.path(out_dir, sprintf("crps_by_h_%s.png", v))
   ggsave(f, g, width = 8, height = 5, dpi = 130)
   f
@@ -183,7 +192,7 @@ make_figures <- function(allscores, cmb_weights, ff, td, spec, cfg,
     key <- paste("pool", v, sep = "|")
     if (key %in% names(ff$pooled))
       files <- c(files, plot_fan(ff$pooled[[key]], td, v, spec, cfg, "pool"))
-    files <- c(files, plot_scores_by_h(allscores, v))
+    files <- c(files, plot_scores_by_h(allscores, v, spec))
     for (b in names(cfg$combination$horizon_buckets))
       files <- c(files, plot_weights(cmb_weights, td, "pool", v, b))
   }

@@ -22,6 +22,19 @@ diag    <- rd("diagnostics.csv")
 wfinal  <- rd("final_weights.csv")
 dm      <- tryCatch(rd("dm_tests.csv"), error = function(e) NULL)
 fc      <- read.csv("../output/forecasts/forecast_table.csv")
+# LEVEL-error view (the headline): cumulative level (cum, + q at h=1) for
+# growth-modelled targets; the rate level (q) for level-modelled targets.
+.dlog_tgt <- spec$variable[spec$transform == "dlog" & spec$target %in% c(TRUE, "TRUE")]
+.lev_meas <- function(v) if (v %in% .dlog_tgt) "cum" else "q"
+.tgt <- spec$variable[spec$target %in% c(TRUE, "TRUE")]
+lvl <- do.call(rbind, lapply(.tgt, function(v) {
+  if (v %in% .dlog_tgt)
+    rbind(scores[scores$variable == v & scores$measure == "cum", ],
+          scores[scores$variable == v & scores$measure == "q" & scores$h == 1, ])
+  else scores[scores$variable == v & scores$measure == "q", ]
+}))
+dm_lvl <- if (!is.null(dm)) do.call(rbind, lapply(.tgt, function(v)
+  dm[dm$variable == v & dm$measure == .lev_meas(v), ])) else NULL
 src <- yaml::read_yaml("../config/config.yml")$default$data$source
 src_note <- if (identical(src, "synthetic")) {
   "All results below are produced from the synthetic block-exogenous DGP, which exists so that the pipeline runs end-to-end offline; the *relative* model rankings are informative about the machinery, not about Australia. Re-run with `data.source: real` for substantive results."
@@ -106,9 +119,13 @@ realization quarters from scoring.
 
 ## 5. Results
 
-### 5.1 Density accuracy by horizon
+### 5.1 Level accuracy by horizon
 
-Mean CRPS by horizon (lower is better), members vs pooled combinations:
+The headline metric is the **level** forecast error: for GDP and inflation the
+cumulative level from the forecast origin (where real GDP and the price level
+land), and for unemployment and the cash rate the rate level itself. Mean level
+CRPS by horizon (lower is better), members vs pooled combinations — note level
+errors accumulate the whole path, so they grow with horizon:
 
 ```{r, results="asis"}
 for (v in unique(fc$variable)) {
@@ -118,34 +135,37 @@ for (v in unique(fc$variable)) {
 ```
 
 ```{r}
-tab <- scores[scores$measure == "q" & scores$h %in% c(1, 4, 8, 12), ]
+tab <- lvl[lvl$h %in% c(1, 4, 8, 12), ]
 tab <- reshape(tab[, c("member","variable","h","crps")],
                idvar = c("member","variable"), timevar = "h", direction = "wide")
 kable(tab[order(tab$variable, tab$crps.1), ], digits = 3,
-      caption = "Mean CRPS at h = 1, 4, 8, 12 (quarterly transforms)")
+      caption = "Mean level CRPS at h = 1, 4, 8, 12 (cumulative level for GDP/inflation; rate level for unemployment/cash rate)")
 ```
 
 ```{r}
-lsx <- scores[scores$measure == "q" & scores$h %in% c(1, 4, 8, 12), ]
+lsx <- lvl[lvl$h %in% c(1, 4, 8, 12), ]
 lsx <- reshape(lsx[, c("member","variable","h","logdens")],
                idvar = c("member","variable"), timevar = "h", direction = "wide")
 kable(lsx[order(lsx$variable, -lsx$logdens.1), ], digits = 2,
-      caption = "Mean log predictive density at h = 1, 4, 8, 12 (higher = better)")
+      caption = "Mean level log predictive density at h = 1, 4, 8, 12 (higher = better)")
 ```
+
+The quarterly and year-ended *growth* scores are not shown here (they answer a
+narrower question); they remain in `output/tables/scores_by_horizon.csv`.
 
 ### 5.2 Significance
 
-Diebold–Mariano tests (Harvey-corrected, Newey–West lag h−1) against the AR(4)
-and random-walk benchmarks; stars on CRPS differentials (`***` 1%, `**` 5%,
-`*` 10%).
+Diebold–Mariano tests (Harvey-corrected) on the **level** CRPS differential
+against the AR(4) and random-walk benchmarks; stars (`***` 1%, `**` 5%, `*`
+10%). Level errors are high-variance, so the test has low power — pools beat
+the benchmarks on average more often than significantly.
 
 ```{r}
-if (!is.null(dm) && nrow(dm)) {
-  d1 <- dm[dm$h %in% c(1, 4, 8) & dm$measure == "q" &
-           grepl("^combo_", dm$member), ]
+if (!is.null(dm_lvl) && nrow(dm_lvl)) {
+  d1 <- dm_lvl[dm_lvl$h %in% c(4, 8, 12) & grepl("^combo_", dm_lvl$member), ]
   kable(d1[order(d1$variable, d1$h), c("member","reference","variable","h",
         "dm_crps","p_crps","sig_crps")], digits = 3, row.names = FALSE,
-        caption = "DM tests: combinations vs univariate benchmarks")
+        caption = "Level DM tests: combinations vs univariate benchmarks")
 }
 ```
 
