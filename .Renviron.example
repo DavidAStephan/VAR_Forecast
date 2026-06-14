@@ -1,0 +1,5 @@
+# Copy this file to .Renviron (which is gitignored) and add your own key.
+# A free FRED API key: https://fred.stlouisfed.org/docs/api/api_key.html
+# Required for the foreign block (US real GDP GDPC1, fed funds FEDFUNDS) when
+# data.source: real. Not needed for data.source: synthetic.
+FRED_API_KEY=your_key_here

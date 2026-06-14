@@ -1,0 +1,14 @@
+"variable","label","block","transform","delta","ss_mean","ss_sd","sets","provider","series_id","pre","target","year_ended"
+"f_act","World activity (US real GDP)","foreign","dlog",0,0.58,0.25,"small,medium","fred","GDPC1","",FALSE,FALSE
+"f_comm","Commodity prices (RBA ICP, SDR)","foreign","dlog",0,0,1,"small,medium,alt_foreign","rba","GRCPAISDR","",FALSE,FALSE
+"f_rate","Foreign policy rate (US fed funds)","foreign","level",1,2.5,1,"small,medium,alt_foreign","fred","FEDFUNDS","",FALSE,FALSE
+"gdp_growth","Real GDP growth (qtr %)","domestic","dlog",0,0.7,0.2,"small,medium,alt_foreign","abs","A2304402X","",TRUE,TRUE
+"cpi_inflation","Trimmed-mean CPI inflation (qtr %)","domestic","dlog",0,0.625,0.15,"small,medium,alt_foreign","rba","GCPIOCPMTMQP","pct_change",TRUE,TRUE
+"unemp_rate","Unemployment rate (%)","domestic","level",1,4.5,0.75,"small,medium,alt_foreign","abs","A84423050A","",TRUE,FALSE
+"cash_rate","Cash rate (%)","domestic","level",1,3.5,1,"small,medium,alt_foreign","rba","FIRMMCRTD","",TRUE,FALSE
+"rtwi","Real TWI (100*log)","domestic","loglevel",1,NA,10,"small,medium,alt_foreign","rba","FRERTWI","",FALSE,FALSE
+"tot","Terms of trade (100*log)","domestic","loglevel",1,NA,10,"medium","abs","A2304200A","",FALSE,FALSE
+"wpi_growth","Wage price index growth (qtr %)","domestic","dlog",0,0.8,0.2,"medium","abs","A2713849C","",FALSE,FALSE
+"emp_growth","Employment growth (qtr %)","domestic","dlog",0,0.45,0.2,"medium","abs","A84423043C","",FALSE,FALSE
+"cons_growth","Household consumption growth (qtr %)","domestic","dlog",0,0.7,0.2,"medium","abs","A2304081W","",FALSE,FALSE
+"bond10y","10y AGS yield (%)","domestic","level",1,4,1,"medium","rba","FCMYGBAG10D","",FALSE,FALSE

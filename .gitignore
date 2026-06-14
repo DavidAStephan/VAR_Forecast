@@ -1,11 +1,28 @@
-data/raw/
-cache/
-_targets/
-output/
-.Rproj.user/
-.Rhistory
-.RData
+# ── Secrets — NEVER commit ──────────────────────────────────────────────────
+# Holds FRED_API_KEY. Collaborators copy .Renviron.example -> .Renviron and add
+# their own free key (https://fred.stlouisfed.org/docs/api/api_key.html).
+.Renviron
+
+# ── renv library — machine-specific, restored from renv.lock ────────────────
+# renv.lock and renv/activate.R ARE committed so anyone can renv::restore();
+# the installed library itself must not be.
 renv/library/
 renv/staging/
-.Renviron
+renv/sandbox/
+renv/python/
+
+# ── Large, regenerable pipeline artifacts ───────────────────────────────────
+# Re-created by tar_make(); hundreds of MB of hash-keyed binary blobs, well
+# over GitHub's per-file limit. Not useful in version control.
+cache/
+_targets/
+
+# ── OS / editor / R session junk ────────────────────────────────────────────
 .DS_Store
+.Rhistory
+.RData
+.Rproj.user/
+
+# Everything else IS committed and pushed: all source (R/, _targets.R,
+# run_all.R, config/), docs (README.md, reports/), tests, renv.lock, and the
+# pulled data (data/raw/) and generated results (output/).
