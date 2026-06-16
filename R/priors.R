@@ -144,6 +144,6 @@ select_lambda <- function(y, p, sigma, delta, grid, lag_decay = 1,
     log_marginal_likelihood(xy$Y, xy$X, pr)
   }, numeric(1))
   lam <- grid[which.max(mls)]
-  logger::log_debug("GLP lambda grid: {paste(round(mls,1), collapse=' ')} -> lambda={lam}")
+  log_debug("GLP lambda grid: {paste(round(mls,1), collapse=' ')} -> lambda={lam}")
   lam
 }

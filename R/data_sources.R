@@ -123,7 +123,7 @@ generate_synthetic_data <- function(cfg, spec) {
                           series_id = "synthetic", pulled = as.character(Sys.Date()))
   )
   attr(out, "dgp") <- list(A1 = A1, A2 = A2, G = G, mu = mu, nf = nf, seed = seed)
-  logger::log_info("Synthetic data generated: {n} quarters x {M} variables (seed {seed})")
+  log_info("Synthetic data generated: {n} quarters x {M} variables (seed {seed})")
   out
 }
 
@@ -206,11 +206,11 @@ download_real_data <- function(cfg, spec, raw_dir = "data/raw") {
       difftime(Sys.time(), file.mtime(cache_file), units = "days") <
         cfg$data$cache_max_age_days
     if (cache_ok) {
-      logger::log_info("cache hit: {v} ({src$provider}:{src$id})")
+      log_info("cache hit: {v} ({src$provider}:{src$id})")
       series[[v]] <- cached$data
     } else {
       df <- tryCatch(fetch_series(v, src, cfg), error = function(e) {
-        logger::log_warn("download failed for {v} ({src$provider}:{src$id}): {conditionMessage(e)}")
+        log_warn("download failed for {v} ({src$provider}:{src$id}): {conditionMessage(e)}")
         NULL
       })
       if (is.null(df)) stop("Could not obtain series '", v, "' (", src$provider, ":",
@@ -253,7 +253,7 @@ download_real_data <- function(cfg, spec, raw_dir = "data/raw") {
                  panel$date <= as.Date(cfg$data$end), ]
   manifest <- do.call(rbind, rows)
   write.csv(manifest, manifest_path, row.names = FALSE)
-  logger::log_info("real data panel: {nrow(panel)} quarters x {ncol(panel)-1} series")
+  log_info("real data panel: {nrow(panel)} quarters x {ncol(panel)-1} series")
   list(data = panel, manifest = manifest)
 }
 

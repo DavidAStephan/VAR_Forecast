@@ -232,6 +232,6 @@ assert_diagnostics <- function(diag_tab) {
     "explosive forecasts"         = all(diag_tab$sanity_all),
     "look-ahead detected"         = all(diag_tab$no_lookahead),
     "not reproducible"            = all(diag_tab$reproducible))
-  logger::log_info("all section-9 diagnostics passed")
+  log_info("all section-9 diagnostics passed")
   invisible(TRUE)
 }

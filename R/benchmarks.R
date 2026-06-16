@@ -194,7 +194,7 @@ fit_ucsv <- function(y, cfg) {
   ess_tau <- min(vapply(fits, tau_ess, numeric(1)))
   conv <- all(vapply(fits, mcse_ok, logical(1)))
   if (!conv)
-    logger::log_warn("ucsv: trend-endpoint MCSE exceeds 15% of predictive sd")
+    log_warn("ucsv: trend-endpoint MCSE exceeds 15% of predictive sd")
   structure(list(engine = "ucsv", varnames = colnames(y), fits = fits,
                  ndraw = ndraw,
                  diagnostics = list(converged = conv, ess_min = ess_tau,

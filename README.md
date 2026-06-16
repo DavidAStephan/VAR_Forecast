@@ -36,6 +36,24 @@ Rscript run_all.R
 ```
 
 That restores pinned dependencies (`renv`), then runs `targets::tar_make()`.
+
+**No `targets`?** Use the drop-in plain runner instead — same steps, same
+outputs, no `targets` dependency (you lose only DAG-level caching of the cheap
+downstream steps; the expensive OOS step stays disk-cached):
+
+```sh
+Rscript run_all_plain.R
+```
+
+This is the entry point for locked-down environments (e.g. the RBA work setup).
+Its hard requirements are `scoringRules`, `stochvol`, `coda` plus the usual
+data/compute stack (`readrba`, `readabs`, `fredr`, `furrr`, `future`, `ggplot2`,
+`yaml`, `digest`, `glue`); it fails fast listing any that are missing.
+`logger` is **optional** — logging runs through a facade (`R/aaa_logging.R`) that
+uses `logger` when installed and falls back to base-R console messages (same
+layout) when it is not. `rdbnomics` is only needed for the `alt_foreign`
+variable set, and the `quarto` R package only for the optional HTML report.
+
 **The default is real data** (`data.source: real` in `config/config.yml`),
 pulling live observations through the latest complete quarter:
 
@@ -115,8 +133,11 @@ Enforced and tested, not aspirational:
 ```
 config/config.yml   every knob: variables, transforms, suite, MCMC, evaluation, combination
 R/                  data_sources, transforms, priors, engines, forecast, benchmarks,
-                    evaluate, combine, covid, report, scorecard, utils
+                    evaluate, combine, covid, report, scorecard, utils;
+                    aaa_logging (logging facade -> logger optional)
 _targets.R          pipeline DAG (targets); parallel over origins via future/furrr
+run_all.R           clone-to-result wrapper (renv restore + targets::tar_make)
+run_all_plain.R     same pipeline without targets (for environments lacking it)
 tests/testthat/     unit tests (priors, block exogeneity, IW sampler, recursion,
                     scoring, pooling, optimiser, no-look-ahead, reproducibility)
 cache/              per-(member, origin) OOS results keyed by config hash

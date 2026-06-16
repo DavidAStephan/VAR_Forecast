@@ -111,7 +111,7 @@ run_oos_member <- function(member, td, spec, cfg, cache_root = "cache") {
     out
   }, .options = furrr::furrr_options(seed = TRUE))
   names(res) <- as.character(origins)
-  logger::log_info("OOS done: {member$name} ({length(origins)} origins)")
+  log_info("OOS done: {member$name} ({length(origins)} origins)")
   res
 }
 
@@ -300,8 +300,8 @@ test_no_lookahead <- function(td, spec, cfg, member = NULL) {
   f1 <- harness_forecast(member, td, t, spec, cfg)
   f2 <- harness_forecast(member, td_bad, t, spec, cfg)
   ok <- identical(f1$draws, f2$draws)
-  if (!ok) logger::log_error("NO-LOOK-AHEAD TEST FAILED")
-  else logger::log_info("no-look-ahead test passed (member {member$name}, origin {t})")
+  if (!ok) log_error("NO-LOOK-AHEAD TEST FAILED")
+  else log_info("no-look-ahead test passed (member {member$name}, origin {t})")
   ok
 }
 
@@ -314,8 +314,8 @@ test_reproducibility <- function(td, spec, cfg) {
   set.seed(derive_seed(cfg$master_seed, "repro"))
   f2 <- forecast_at_origin(member, td[seq_len(t), , drop = FALSE], spec, cfg)
   ok <- identical(f1$draws, f2$draws)
-  if (!ok) logger::log_error("REPRODUCIBILITY TEST FAILED")
-  else logger::log_info("reproducibility test passed")
+  if (!ok) log_error("REPRODUCIBILITY TEST FAILED")
+  else log_info("reproducibility test passed")
   ok
 }
 

@@ -198,7 +198,7 @@ check_forecasts <- function(paths, y, label = "member", delta = NULL) {
   if (!is.null(delta)) rev_ok <- rev_ok | (delta == 1)
   ok_converge <- all(rev_ok)
   ok <- ok_finite && ok_bound && ok_converge
-  if (!ok) logger::log_warn(
+  if (!ok) log_warn(
     "forecast sanity FAILED for {label}: finite={ok_finite} bounded={ok_bound} converge={ok_converge}")
   list(finite = ok_finite, bounded = ok_bound, converged = ok_converge, ok = ok)
 }

@@ -52,7 +52,7 @@ check_data <- function(td, spec, min_quarters = 80) {
     all(abs(td[[v]]) < 50), logical(1)))
   failed <- names(checks)[!unlist(checks)]
   if (length(failed)) stop("data checks failed: ", paste(failed, collapse = ", "))
-  logger::log_info("data checks passed ({nrow(td)} quarters, {ncol(td)-1} vars)")
+  log_info("data checks passed ({nrow(td)} quarters, {ncol(td)-1} vars)")
   invisible(checks)
 }
 

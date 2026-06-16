@@ -2,9 +2,9 @@
 
 suppressPackageStartupMessages({
   library(yaml)
-  library(logger)
   library(digest)
 })
+# logging goes through the facade in aaa_logging.R, so `logger` is optional
 
 #' Load the project configuration.
 load_config <- function(path = "config/config.yml") {
@@ -30,8 +30,8 @@ config_hash <- function(cfg, r_dir = "R") {
 
 #' Set up the logger once per session.
 setup_logging <- function(level = "INFO") {
-  logger::log_threshold(level)
-  logger::log_layout(logger::layout_glue_generator(
+  log_threshold(level)
+  log_layout(layout_glue_generator(
     format = "{format(time, '%H:%M:%S')} [{level}] {msg}"))
   invisible(NULL)
 }
@@ -47,7 +47,7 @@ derive_seed <- function(master_seed, key) {
 timed <- function(label, expr) {
   t0 <- Sys.time()
   res <- force(expr)
-  logger::log_info("{label} took {round(as.numeric(difftime(Sys.time(), t0, units = 'secs')), 1)}s")
+  log_info("{label} took {round(as.numeric(difftime(Sys.time(), t0, units = 'secs')), 1)}s")
   res
 }
 

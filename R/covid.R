@@ -103,7 +103,7 @@ estimate_covid_scales <- function(y, dates, p, sigma, delta, cfg, lambda = 0.2) 
     mls <- vapply(rgrid, function(r) eval_ml(scales, r), numeric(1))
     rho <- rgrid[which.max(mls)]
   }
-  logger::log_debug("covid scales at {max(dates)}: {paste(scales, collapse='/')} rho={rho}")
+  log_debug("covid scales at {max(dates)}: {paste(scales, collapse='/')} rho={rho}")
   list(cq = cq, scales = scales, rho = rho)
 }
 
