@@ -29,13 +29,22 @@ if (file.exists("renv.lock") && requireNamespace("renv", quietly = TRUE)) {
   try(renv::restore(prompt = FALSE), silent = TRUE)
 }
 
-# fail early with a clear message if a hard dependency is missing
-.need <- c("scoringRules", "stochvol", "coda", "yaml", "digest",
-           "furrr", "future", "ggplot2")
+# fail early if a TRULY required package is missing (the pipeline cannot run)
+.need <- c("yaml", "digest", "furrr", "future", "ggplot2")
 .missing <- .need[!vapply(.need, requireNamespace, logical(1), quietly = TRUE)]
 if (length(.missing))
   stop("missing required packages: ", paste(.missing, collapse = ", "),
        "\nInstall them (e.g. via your Artifactory CRAN mirror) and re-run.")
+
+# the three statistical packages are OPTIONAL: the run degrades instead of
+# failing (see R/aaa_capabilities.R). Report what will be reduced.
+.optional <- c(
+  scoringRules = "scoring + DM tests + scorecard performance tables (forecasts still pooled with EQUAL weights)",
+  stochvol     = "the SV members (small_sv, medium_minn) and the ucsv benchmark are skipped",
+  coda         = "the MCMC convergence diagnostic (estimates unchanged)")
+for (p in names(.optional))
+  if (!requireNamespace(p, quietly = TRUE))
+    message(sprintf("NOTE: '%s' not installed -- degraded: %s", p, .optional[[p]]))
 
 # project functions; aaa_logging.R sorts first so the logging facade exists
 # before anything calls it (also re-sourced in workers by ensure_project_loaded)

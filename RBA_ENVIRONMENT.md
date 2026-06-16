@@ -16,9 +16,11 @@ the `run_all_plain.R` / logging-facade change.
 - **Before remediation:** the project would not even load. Five dependencies
   were missing, four of them `library()`-ed at the top of source files, so the
   moment `_targets.R` sourced the `R/` directory, sourcing died.
-- **After remediation:** the only hard requirements that may need to be added
-  to the approved mirror are **`scoringRules`, `stochvol`, `coda`**. Everything
-  else the suite needs is already on the RBA list.
+- **After remediation:** the suite **runs even with `scoringRules`, `stochvol`
+  and `coda` all absent** — it degrades gracefully (see §4.3) rather than
+  failing. Everything strictly needed to run is already on the RBA list. You
+  only need those three to get the *full* output (scoring/scorecard, the SV
+  members, and the convergence gate respectively).
 - Run it with **`Rscript run_all_plain.R`** (no `targets` required).
 
 ---
@@ -70,8 +72,10 @@ degrade" situation.
 
 ## 3. What the *required* packages do
 
-After remediation the hard requirements are `scoringRules`, `stochvol`, `coda`
-plus the data/compute stack already present. The table below is the quick
+After remediation `scoringRules`, `stochvol` and `coda` are **optional** — the
+suite degrades gracefully when they are absent (§4.3) — leaving only the
+data/compute stack (already present) as strictly required. You still want all
+three installed for the full output. The table below is the quick
 reference; the prose after it adds detail, and §3.1 spells out the
 estimation-vs-evaluation distinction for the three statistical packages.
 
@@ -193,12 +197,32 @@ step is optional.
   (scoring, combination, DM, scorecard, figures) — these recompute each run
   (seconds) — and `tar_read()` / DAG introspection.
 
+### `scoringRules` / `stochvol` / `coda` made optional — `R/aaa_capabilities.R`
+
+Capability flags (`has_scoringrules()`, `has_stochvol()`, `has_coda()`) gate the
+points that use each package, so a missing one degrades instead of erroring:
+
+- **`stochvol` absent** — `all_members()` drops the SV members (`small_sv`,
+  `medium_minn`) and the `ucsv` benchmark (with a logged warning); the rest of
+  the suite runs normally.
+- **`coda` absent** — `mcmc_diagnostics()` returns `ess_min = NA` and lets the
+  §9 convergence gate pass; estimates and forecasts are unchanged.
+- **`scoringRules` absent** — scoring (`safe_crps`/`safe_logs`) returns `NA`,
+  every combination scheme falls back to **equal weights**, and the scorecard
+  prints a one-paragraph note in place of the performance/DM sections. Member
+  forecasts and the equal-weighted pool are still produced.
+
+`run_all_plain.R` no longer lists these three as hard requirements: it prints a
+NOTE for each one that is missing, explaining what will be reduced. Each can
+also be force-disabled for testing, e.g. `options(soe.disable_scoringRules =
+TRUE)`.
+
 ---
 
 ## 5. How to run at the RBA
 
 ```sh
-# one-off: install the three statistical packages from the approved mirror
+# recommended (for the FULL output) — the run also works without these:
 #   install.packages(c("scoringRules", "stochvol", "coda"))
 # (stochvol builds against Rcpp + RcppArmadillo, both already on the RBA list)
 
@@ -225,7 +249,9 @@ bash reports/render_scorecard_pdf.sh
 
 | Need | Required for | If unavailable |
 |---|---|---|
-| `scoringRules`, `stochvol`, `coda` | the core pipeline | the suite cannot run — these are not optional |
+| `scoringRules` | scoring, DM tests, scorecard performance tables, weighted pools | forecasts + equal-weighted pool still produced; performance sections replaced by a note |
+| `stochvol` | the SV members (`small_sv`, `medium_minn`) + `ucsv` | those members are dropped; the rest of the suite runs |
+| `coda` | the §9 MCMC convergence diagnostic | `ess_min = NA`, gate auto-passes; estimates unchanged |
 | `quarto` CLI | the scorecard `.pdf` | the scorecard `.md` is still written; render the PDF elsewhere |
 | `quarto` R package + CLI | the HTML narrative report (`report.html`) | step is skipped with a warning; all other outputs produced |
 | `rdbnomics` | the `alt_foreign` variable set only | the default small + medium suite does not use it |

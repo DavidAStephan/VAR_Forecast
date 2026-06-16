@@ -128,6 +128,8 @@ ffbs_local_level <- function(y, s2e, s2u, tau0 = y[1], P0 = 10 * var(y)) {
 #' is bimodal and the trend-vol process piles up near zero); a direct IG draw
 #' for the trend variance removes that dimension entirely. See README.md D9.
 fit_ucsv <- function(y, cfg) {
+  if (!has_stochvol())   # all_members() drops ucsv; this is a backstop
+    stop("the 'stochvol' package is required for the 'ucsv' benchmark")
   ndraw <- cfg$mcmc$ndraw; nburn <- cfg$mcmc$nburn
   thin <- if (is.null(cfg$mcmc$bench_thin)) 1 else cfg$mcmc$bench_thin
   # tight vol-of-vol prior (mean 0.04): Stock-Watson fix gamma ~ 0.2; a loose
@@ -180,10 +182,12 @@ fit_ucsv <- function(y, cfg) {
   # must be Monte-Carlo-precise. Gate: MCSE of the trend endpoint must be
   # small relative to the one-step predictive sd. ESS values are still
   # reported. README.md D9.
-  tau_ess <- function(f) as.numeric(coda::effectiveSize(f$tauT))
+  tau_ess <- function(f) safe_ess(f$tauT)   # NA when coda is unavailable
   mcse_ok <- function(f) {
+    e <- tau_ess(f)
+    if (!is.finite(e)) return(TRUE)   # no ESS: cannot gate, so pass
     pred_sd <- sqrt(var(f$tauT) + mean(exp(f$heT)) + mean(f$s2uT))
-    mcse <- sd(f$tauT) / sqrt(max(tau_ess(f), 1))
+    mcse <- sd(f$tauT) / sqrt(max(e, 1))
     mcse < 0.15 * pred_sd
   }
   fits <- lapply(seq_len(ncol(y)), function(j) {

@@ -4,7 +4,9 @@
 # td[1:t, ] and everything downstream (GLP lambda selection, estimation,
 # prediction) sees that truncated panel alone. test_no_lookahead() verifies it.
 
-suppressPackageStartupMessages({ library(scoringRules); library(furrr) })
+# scoringRules is OPTIONAL: scoring goes through safe_crps()/safe_logs() from
+# aaa_capabilities.R (NA when it is absent), so it is not attached here.
+suppressPackageStartupMessages({ library(furrr) })
 
 #' Forecast origins (row indices of the transformed panel).
 oos_origins <- function(td, cfg) {
@@ -21,7 +23,16 @@ all_members <- function(cfg) {
   suite <- lapply(cfg$suite, function(m) { m$kind <- "var"; m })
   bench <- lapply(cfg$benchmarks, function(b)
     list(name = b, kind = "benchmark", engine = b))
-  c(suite, bench)
+  members <- c(suite, bench)
+  if (!has_stochvol()) {   # drop SV members + ucsv when stochvol is unavailable
+    drop <- vapply(members, function(m) m$engine %in% c("sv", "ucsv"), logical(1))
+    if (any(drop)) {
+      nm <- vapply(members[drop], `[[`, "", "name")
+      log_warn("stochvol unavailable: dropping SV members {paste(nm, collapse = ', ')}")
+      members <- members[!drop]
+    }
+  }
+  members
 }
 
 #' Fit + forecast a single member at one origin using ONLY data up to t.
@@ -148,8 +159,8 @@ score_member <- function(member_name, oos_res, td, spec, cfg) {
           member = member_name, origin = t, date = td$date[t + h],
           variable = v, measure = "q", h = h,
           point = mean(x), real = y_real,
-          logdens = -scoringRules::logs_sample(y_real, x),
-          crps = scoringRules::crps_sample(y_real, x),
+          logdens = -safe_logs(y_real, x),
+          crps = safe_crps(y_real, x),
           pit = mean(x <= y_real))
         # year-ended: sum of 4 quarterly outcomes ending at t+h
         if (isTRUE(vt$year_ended) && vt$transform == "dlog") {
@@ -162,8 +173,8 @@ score_member <- function(member_name, oos_res, td, spec, cfg) {
             member = member_name, origin = t, date = td$date[t + h],
             variable = v, measure = "ye", h = h,
             point = mean(xye), real = ye_real,
-            logdens = -scoringRules::logs_sample(ye_real, xye),
-            crps = scoringRules::crps_sample(ye_real, xye),
+            logdens = -safe_logs(ye_real, xye),
+            crps = safe_crps(ye_real, xye),
             pit = mean(xye <= ye_real))
         }
         # cumulative level from the origin: sum of quarterly draws t+1..t+h
@@ -174,8 +185,8 @@ score_member <- function(member_name, oos_res, td, spec, cfg) {
             member = member_name, origin = t, date = td$date[t + h],
             variable = v, measure = "cum", h = h,
             point = mean(xcum), real = cum_real,
-            logdens = -scoringRules::logs_sample(cum_real, xcum),
-            crps = scoringRules::crps_sample(cum_real, xcum),
+            logdens = -safe_logs(cum_real, xcum),
+            crps = safe_crps(cum_real, xcum),
             pit = mean(xcum <= cum_real))
         }
       }

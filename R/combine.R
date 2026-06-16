@@ -66,7 +66,8 @@ optimal_pool_weights <- function(tr, members, t, forgetting) {
 combo_weights <- function(scheme, scores, v, hs, t, members, cfg) {
   n <- length(members)
   eq <- setNames(rep(1 / n, n), members)
-  if (scheme == "equal") return(eq)
+  # without scoringRules there are no log scores to weight on -> equal weights
+  if (scheme == "equal" || !has_scoringrules()) return(eq)
   tr <- .train_scores(scores, v, hs, t, members)
   if (.n_train_origins(tr) < cfg$combination$min_train_origins) return(eq)
   if (scheme == "logscore") {
@@ -168,7 +169,7 @@ combine_all <- function(scores, draws_env, td, spec, cfg) {
                 if (cnt[i] == 0) return(numeric(0))
                 sample(dl_use[[members[i]]], cnt[i], replace = TRUE)
               }))
-              crps_pool <- scoringRules::crps_sample(ss$real[1], mix)
+              crps_pool <- safe_crps(ss$real[1], mix)
             }
             out_rows[[length(out_rows) + 1]] <- data.frame(
               member = paste0("combo_", scheme), origin = t,

@@ -12,7 +12,8 @@
 #   sv      : triangular equation-by-equation with stochastic volatility
 #             (CCM-2019-style; exact factorisation of the reduced form)
 
-suppressPackageStartupMessages({ library(stochvol); library(coda) })
+# stochvol (SV engine) and coda (ESS diagnostic) are OPTIONAL: used via guarded
+# wrappers (has_stochvol(), safe_ess()) from aaa_capabilities.R, not attached.
 
 # ---- shared helpers -----------------------------------------------------------
 
@@ -74,9 +75,12 @@ block_exog_metric <- function(Bbar, M, p, blocks) {
 
 #' MCMC diagnostics: ESS for the own-first-lag coefficients + stability share.
 mcmc_diagnostics <- function(own_lag_draws, stable_share) {
+  if (!has_coda())   # no ESS available: report NA and let the gate pass
+    return(list(ess_min = NA_real_, ess_median = NA_real_,
+                stable_share = stable_share, converged = TRUE))
   ess <- apply(own_lag_draws, 2, function(x) {
     if (sd(x) < 1e-12) return(NA_real_)   # pinned by block-exog prior etc.
-    as.numeric(coda::effectiveSize(x))
+    safe_ess(x)
   })
   list(ess_min = suppressWarnings(min(ess, na.rm = TRUE)),
        ess_median = suppressWarnings(median(ess, na.rm = TRUE)),
@@ -346,6 +350,8 @@ sv_equation_prior <- function(i, eq, sigma, delta, lambda) {
 }
 
 fit_sv <- function(y, member, spec_m, cfg, prior, weights = NULL) {
+  if (!has_stochvol())   # all_members() drops SV members; this is a backstop
+    stop("the 'stochvol' package is required for SV member '", member$name, "'")
   M <- ncol(y); p <- member$lags
   blocks <- spec_m$block
   sigma <- ar_sigmas(y); delta <- spec_m$delta

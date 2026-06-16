@@ -376,6 +376,9 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
   buckets <- list(`near (1-4)` = 1:4, `medium (5-8)` = 5:8, `far (9-12)` = 9:12)
   lvl <- .level_view(scores, spec)        # the headline LEVEL-error view
   qtr <- .growth_view(scores, spec)       # the QUARTERLY-GROWTH view
+  # scoring may be unavailable (scoringRules not installed) -> crps/logdens are
+  # NA; in that case the performance/DM sections are omitted, not rendered empty.
+  scoring_ok <- any(is.finite(scores$crps))
   L <- c()
   add <- function(...) L <<- c(L, paste0(...))
 
@@ -439,6 +442,17 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
   add("| `combo_pool` | Optimal prediction pool (Hall-Mitchell / Geweke-Amisano) |")
   add("| `combo_bma` | Bayesian model averaging — reported as a diagnostic only |")
 
+  # ---- 2-5. Performance, combinations, significance (need scoring) ----
+  if (!scoring_ok) {
+    add("\n## 2. Forecast performance\n")
+    add("_Forecast scoring is unavailable in this run — the `scoringRules` ",
+        "package is not installed — so the level and quarterly-growth performance ",
+        "tables, the combination-vs-best comparison and the Diebold-Mariano tests ",
+        "are omitted. Forecasts are still produced and pooled with equal weights; ",
+        "install `scoringRules` and re-run to populate these sections. The model ",
+        "specifications (§1) and profiles below are unaffected._\n")
+  } else {
+
   # ---- 2. Performance: LEVELS (the headline) ----
   add("\n## 2. Forecast performance — levels (the headline)\n")
   add("These tables score the **level** of each series at t+h: the cumulative ",
@@ -495,6 +509,8 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
     .dm_block(add, dm, tgt, spec, function(v) "q")
   }
 
+  }  # end if (scoring_ok)
+
   # ---- 6. Model profiles ----
   add("\n## 6. Model profiles\n")
   add("One entry per model: its specification, what makes it distinct, the role it ",
@@ -513,10 +529,12 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
       add("*Role:* ", p$role, "  ")
       add("*Strengths & failure modes:* ", p$watch, "  ")
     }
-    add("*In this evaluation — levels:* ",
-        .member_evidence(lvl, m$name, tgt, buckets, pool, "level"), "  ")
-    add("*In this evaluation — quarterly growth:* ",
-        .member_evidence(qtr, m$name, tgt, buckets, pool, "growth"), "  ")
+    if (scoring_ok) {
+      add("*In this evaluation — levels:* ",
+          .member_evidence(lvl, m$name, tgt, buckets, pool, "level"), "  ")
+      add("*In this evaluation — quarterly growth:* ",
+          .member_evidence(qtr, m$name, tgt, buckets, pool, "growth"), "  ")
+    }
     if (!is.null(p)) add("*See:* README.md ", p$refs, "\n") else add("\n")
   }
   add("### 6b. Benchmark members\n")
@@ -530,10 +548,12 @@ write_model_scorecard <- function(scores, spec, dm, diag, cfg,
       add("*Role:* ", p$role, "  ")
       add("*Strengths & failure modes:* ", p$watch, "  ")
     }
-    add("*In this evaluation — levels:* ",
-        .member_evidence(lvl, b, tgt, buckets, pool, "level"), "  ")
-    add("*In this evaluation — quarterly growth:* ",
-        .member_evidence(qtr, b, tgt, buckets, pool, "growth"), "  ")
+    if (scoring_ok) {
+      add("*In this evaluation — levels:* ",
+          .member_evidence(lvl, b, tgt, buckets, pool, "level"), "  ")
+      add("*In this evaluation — quarterly growth:* ",
+          .member_evidence(qtr, b, tgt, buckets, pool, "growth"), "  ")
+    }
     if (!is.null(p)) add("*See:* README.md ", p$refs, "\n") else add("\n")
   }
   add("### 6c. Combination schemes\n")
