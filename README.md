@@ -374,6 +374,19 @@ and gated in `assert_diagnostics()`.
 commodity prices, which contaminates medium-horizon dynamics; RBA RDP 2013-06
 shows the restriction materially raises the role of foreign shocks.
 
+**Scope — dynamics, not the steady-state means.** Block exogeneity constrains
+the **lag dynamics** (the autoregressive coefficient matrix: foreign equations
+carry no domestic lags). It does *not* make the steady-state *means*
+block-exogenous: in the `ss` (Villani 2009) member the unconditional means ψ are
+drawn from their joint GLS full conditional using the full, non-block-diagonal
+error covariance Σ, so the foreign and domestic means are statistically coupled
+through the contemporaneous error correlations. This is the correct posterior —
+a foreign-only ψ update would be an *incorrect* full conditional — so the
+foreign steady states the domestic forecast inherits are informed by the joint
+residual covariance, by design (see the note in `fit_ss`, R/engines.R). The
+block-exogeneity diagnostic in `assert_diagnostics()` therefore (correctly)
+checks the lag coefficients, not ψ.
+
 **Rejected.** A pure Kronecker-conjugate suite (cannot represent asymmetric
 prior variances — this is exactly why the spec requires the Gibbs engine).
 **Config:** `variables.*.block`, `mcmc.block_exog_prior_sd`.

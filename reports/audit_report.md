@@ -129,6 +129,7 @@ The tested rolling-4-quarter-sum helper is invoked nowhere in production; ye sco
 - **Confirmed view:** The `psi` full conditional uses the full M×M `Sigma_inv`, so the foreign sub-vector of `psi` depends on domestic residuals. Isolation test (A and Sigma fixed at posterior means, block-exog verified at ~7e-6): shifting domestic GDP by 1 sd moves foreign `psi` by up to ~1 posterior sd; a counterfactual foreign-only update (using `Sigma_ff/U_ff`) is invariant. README D3/D5 frame block exogeneity and the inherited foreign steady state without noting this contamination, and the gated `block_exog_metric` checks only A. → Genuine defect, medium.
 - **Refuted view:** This *is* the canonical, correct Villani (2009) steady-state full conditional. Block exogeneity restricts the AR coefficient matrix (Granger non-causality), not the error covariance; with a non-block-diagonal Sigma (correlations up to 0.83 here), GLS legitimately uses cross-equation residual information for the foreign means — that is the true posterior, not a leak. The finder's suggested foreign-only fix would make the Gibbs step an *incorrect* full conditional. At most a documentation clarification.
 - **Adjudication needed:** Is exact block exogeneity *of the means* a required contract (README intent) or only of the lag dynamics? If the former, the foreign-only update or a documentation change is warranted; if the latter, the code is correct as-is.
+- **RESOLVED (2026-06-22): follow Villani.** Block exogeneity is a contract on the *lag dynamics only*, not the steady-state means. The full-Σ ψ full conditional is the correct Villani (2009) posterior and is kept unchanged; a foreign-only update would be an incorrect full conditional. Documented in README D3 ("Scope — dynamics, not the steady-state means") and a code note in `fit_ss` (R/engines.R). No code change to the sampler.
 
 #### RW weighted sd: `sd(diff(y)*w)` — R/benchmarks.R:10–12 (claimed low)
 - **Confirmed view:** Not a proper weighted sd — `sd()` re-estimates the mean of scaled increments and uses n-1; `fit_ucmean` (R/benchmarks.R:235–237) implements the textbook weighted form correctly, proving it was available. Crude but inert in outcome.
@@ -216,7 +217,7 @@ keeps them by design as pooling evidence).
 | Thin self-tests (evaluate.R) | ✅ fixed | no-look-ahead + reproducibility now loop one member per engine; NLA adds a COVID-spanning origin |
 | lag_decay hardcode (engines.R) | ✅ documented | comment: decay exponent fixed at 1 in conj_br |
 | Dead `year_ended()` (transforms.R) | ✅ documented | kept (tested reference); comment notes the inline scorer must match it |
-| ss foreign-ψ contamination | ⚠️ deferred (disputed) | needs design decision: is block-exog *of the means* a contract? |
+| ss foreign-ψ contamination | ✅ resolved (follow Villani) | code kept (correct full conditional); documented that block-exog is a lag-dynamics contract only (README D3 + fit_ss note) |
 | rw weighted sd | ⚠️ deferred (disputed) | verifier MC showed the current estimator is unbiased/fine |
 | benchmark two-pass COVID refinement | ⚠️ deferred (disputed) | verifier found zero difference at every COVID origin |
 | conj_br SOC zero-ybar edge; minnesota default 1e-5 | ⚠️ deferred | cosmetic/unreachable; default change could perturb tests, no production impact |

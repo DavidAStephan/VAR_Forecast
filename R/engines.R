@@ -282,7 +282,13 @@ fit_ss <- function(y, member, spec_m, cfg, prior, weights = NULL) {
       if (try == 5) A <- Anew   # keep anyway; flagged via stability share
     }
     # 2. Psi | A, Sigma: w_t-row = U Psi + e_t with var s_t^2 Sigma, so each
-    # t contributes w_t^2 to the GLS precision and w_t^2 * row to the rhs
+    # t contributes w_t^2 to the GLS precision and w_t^2 * row to the rhs.
+    # NOTE: this is the full Villani (2009) GLS full conditional -- it uses the
+    # COMPLETE M x M Sigma_inv, so the joint draw of Psi couples the foreign and
+    # domestic means through the (non-block-diagonal) error covariance. Block
+    # exogeneity here constrains the LAG DYNAMICS (A is block-lower-triangular),
+    # NOT the steady-state means: a foreign-only Psi update would be an incorrect
+    # full conditional. This is intentional (README D5 / DECISIONS D3).
     U <- diag(M); for (l in seq_len(p)) U <- U - t(A[((l - 1) * M + 1):(l * M), ])
     xy_raw <- build_XY(y, p, intercept = FALSE)
     W <- xy_raw$Y - xy_raw$X %*% A
