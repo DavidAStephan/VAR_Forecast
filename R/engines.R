@@ -288,7 +288,7 @@ fit_ss <- function(y, member, spec_m, cfg, prior, weights = NULL) {
     # domestic means through the (non-block-diagonal) error covariance. Block
     # exogeneity here constrains the LAG DYNAMICS (A is block-lower-triangular),
     # NOT the steady-state means: a foreign-only Psi update would be an incorrect
-    # full conditional. This is intentional (README D5 / DECISIONS D3).
+    # full conditional. This is intentional (README D3 block-exog scope / D5).
     U <- diag(M); for (l in seq_len(p)) U <- U - t(A[((l - 1) * M + 1):(l * M), ])
     xy_raw <- build_XY(y, p, intercept = FALSE)
     W <- xy_raw$Y - xy_raw$X %*% A

@@ -218,7 +218,7 @@ These are **real published data**, but not literally the named concept:
 
 1. **`f_act` "World activity" is US real GDP (a US-only proxy).** GDPC1 is the
    right *concept* (real GDP, the same as the domestic activity variable) but
-   is US-only, a deliberate, documented proxy (DECISIONS.md D1): the domain
+   is US-only, a deliberate, documented proxy (see D1 below): the domain
    brief flags that the US is an imperfect proxy for Australia's Asia-weighted
    trading partners. The intended trade-weighted alternative (`f_act_tw`, OECD
    G20 GDP via DBnomics) is **stale on DBnomics (ends 2023Q3)** and is parked
@@ -258,7 +258,7 @@ These are **real published data**, but not literally the named concept:
 2. **Steady-state prior anchors** (`ss_mean`: inflation 2.5 % p.a. target
    midpoint, potential growth 2.8 %, NAIRU 4.5 %, neutral cash rate 3.5 %)
    are judgment numbers entering through priors, not data; sd's are
-   configured and documented (DECISIONS.md D5).
+   configured and documented (see D5 below).
 3. **External forecasts hook** (`read_external_forecasts`) returns NULL
    unless the user supplies a real file — no placeholder data.
 
@@ -520,7 +520,8 @@ hidden).
 per horizon bucket (1–4, 5–8, 9–12): equal; recursive log-score weights
 (Jore–Mitchell–Vahey 2010) with forgetting 0.95; optimal pool
 (Hall–Mitchell / Geweke–Amisano) maximising the discounted historical pool log
-score, softmax-parametrised BFGS; BMA via one-step predictive likelihood,
+score, softmax-parametrised BFGS; BMA via the shortest-horizon-in-bucket
+predictive likelihood (h = 1 / 5 / 9 for near / medium / far),
 **reported as a diagnostic only**. Non-BMA weights are shrunk toward equal
 with κ = 0.3; weights at origin t use only scores with s + h ≤ t; equal
 weights until 8 training origins exist.
